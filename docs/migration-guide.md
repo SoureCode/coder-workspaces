@@ -48,8 +48,9 @@ An existing devcontainer that:
   "remoteUser": "${localEnv:DEVCONTAINER_USERNAME:dev}",
   "containerUser": "${localEnv:DEVCONTAINER_USERNAME:dev}",
   "mounts": [
-    "source=devhome-${localEnv:OWNER_USERNAME:shared},target=/home/${localEnv:DEVCONTAINER_USERNAME:dev},type=volume"
+    "source=/mnt/devhome,target=/home/${localEnv:DEVCONTAINER_USERNAME:dev},type=bind"
   ],
+  "onCreateCommand": "test -z \"$(ls -A $HOME 2>/dev/null)\" && cp -rT /etc/skel $HOME || true",
   "features": {
     // pick from the feature reference below
   },
@@ -62,10 +63,15 @@ An existing devcontainer that:
 Rules:
 
 - `name` — keep the project's existing name.
-- Volume name is **always** `devhome-${localEnv:OWNER_USERNAME:shared}`. Do
-  **not** add the project name to the volume — the point is that every
-  project shares one home per user. Fallback `:shared` kicks in when running
-  the devcontainer locally outside Coder.
+- Mount **source** is **always** `/mnt/devhome`, mount **type** is
+  **always** `bind`. That path is the per-owner home volume mounted into
+  every outer Coder workspace (see `main.tf`'s `docker_volume "devhome"`).
+  Do **not** introduce per-project volume names — the whole point is that
+  every project shares one home per owner.
+- `onCreateCommand` is required. Bind mounts don't auto-seed from the
+  image, so this line copies `/etc/skel` into `$HOME` on the first-ever
+  create and no-ops on every subsequent create. See
+  [`persistence.md`](persistence.md#seeding-on-first-create).
 - `remoteUser` and `containerUser` both use `${localEnv:DEVCONTAINER_USERNAME:dev}`.
 - Do **not** set `CLAUDE_CONFIG_DIR` or `SCCACHE_DIR` in `containerEnv` —
   their defaults (`~/.claude`, `~/.cache/sccache`) already land inside the
@@ -178,19 +184,24 @@ Typical `features` block for a C++ project:
 
 ## Persistent home caveats
 
-One volume per Coder user, shared across every devcontainer they open. This
-is intentional — same bash history, same `~/.gitconfig`, same `~/.claude`
+One volume per Coder *owner*, bind-mounted through every outer workspace
+they open. Shared across every devcontainer they open, in every workspace
+they open. Same bash history, same `~/.gitconfig`, same `~/.claude`,
 everywhere. Side effects to understand:
 
-- First-time volume creation seeds from the image's `/home/<user>` (Docker
-  copies dir contents when an empty named volume is mounted over a
-  non-empty target). Subsequent rebuilds use the volume; changes to the
-  image's home dir will **not** propagate.
+- Bind mounts don't auto-seed. The `onCreateCommand` in the template
+  handles it: empty `$HOME` → copy `/etc/skel`, populated `$HOME` → no-op.
 - Put long-lived shell config in `/etc/bash.bashrc` (image-side) so it
-  stays authoritative.
+  stays authoritative. `~/.bashrc` lives on the volume and is only
+  populated once on the first-ever create; rebuilding the image later
+  does **not** update it.
 - Tools that store env-specific state in `$HOME` (some pyenv/nvm layouts,
   `.cache/` bloat) can collide across projects. Usually fine for dotfiles
   and coarse caches; tune per-project if something misbehaves.
+- Running two workspaces simultaneously shares the same home (same
+  situation as running two terminals on your laptop). Tools that tolerate
+  concurrent writers cope fine; tools that don't behave as they would
+  locally.
 
 ## Checklist for the migrating agent
 

@@ -11,8 +11,9 @@
   "remoteUser": "${localEnv:DEVCONTAINER_USERNAME:dev}",
   "containerUser": "${localEnv:DEVCONTAINER_USERNAME:dev}",
   "mounts": [
-    "source=devhome-${localEnv:OWNER_USERNAME:shared},target=/home/${localEnv:DEVCONTAINER_USERNAME:dev},type=volume"
+    "source=/mnt/devhome,target=/home/${localEnv:DEVCONTAINER_USERNAME:dev},type=bind"
   ],
+  "onCreateCommand": "test -z \"$(ls -A $HOME 2>/dev/null)\" && cp -rT /etc/skel $HOME || true",
   "features": {
     "ghcr.io/sourecode/devcontainer-features/nvm:2": {},
     "ghcr.io/sourecode/devcontainer-features/claude-code:2": {},
