@@ -10,6 +10,9 @@
   },
   "remoteUser": "${localEnv:DEVCONTAINER_USERNAME:dev}",
   "containerUser": "${localEnv:DEVCONTAINER_USERNAME:dev}",
+  "mounts": [
+    "source=devcontainer-home-${devcontainerId},target=/home/${localEnv:DEVCONTAINER_USERNAME:dev},type=volume"
+  ],
   "features": {
     "ghcr.io/sourecode/devcontainer-features/claude-code:1": {},
     "ghcr.io/sourecode/devcontainer-features/rtk:1": {},
