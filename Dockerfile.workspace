@@ -1,0 +1,127 @@
+ARG UBUNTU_VERSION=noble
+FROM ubuntu:${UBUNTU_VERSION}
+
+SHELL ["/bin/bash", "-c"]
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Base certs + gnupg so we can add the Docker apt repo
+RUN apt-get update && \
+    apt-get upgrade -y --no-install-recommends --no-install-suggests && \
+    apt-get install -y --no-install-recommends --no-install-suggests \
+        ca-certificates curl gnupg lsb-release && \
+    rm -rf /var/lib/apt/lists/*
+
+# Docker official apt repo (Debian/Ubuntu)
+RUN install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+        | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    chmod a+r /etc/apt/keyrings/docker.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
+        > /etc/apt/sources.list.d/docker.list
+
+# Baseline packages + Docker engine
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends --no-install-suggests \
+        bash \
+        build-essential \
+        containerd.io \
+        docker-ce \
+        docker-ce-cli \
+        docker-buildx-plugin \
+        docker-compose-plugin \
+        git \
+        htop \
+        iproute2 \
+        jq \
+        openssh-client \
+        less \
+        locales \
+        man \
+        pipx \
+        python3 \
+        python3-pip \
+        rsync \
+        software-properties-common \
+        sudo \
+        systemd \
+        systemd-sysv \
+        unzip \
+        vim \
+        wget && \
+    rm -rf /var/lib/apt/lists/*
+
+# Node.js LTS via NodeSource (needed by code-server, devcontainers/cli, etc.)
+RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+# Pre-install @devcontainers/cli globally so the Coder module doesn't need
+# to (which fails for non-root users installing to /usr/lib/node_modules).
+RUN npm install -g @devcontainers/cli
+
+# Pre-populate system known_hosts for common git forges so SSH clones don't
+# race the agent's ssh-keyscan startup step.
+RUN ssh-keyscan -t rsa,ecdsa,ed25519 github.com gitlab.com bitbucket.org \
+        >> /etc/ssh/ssh_known_hosts 2>/dev/null
+
+# Disable containerd-snapshotter so image/layer data stays under
+# /var/lib/docker (classic overlay2) instead of /var/lib/containerd. The
+# persistent devcontainer cache volume only covers /var/lib/docker.
+RUN mkdir -p /etc/docker && \
+    printf '{\n  "features": { "containerd-snapshotter": false }\n}\n' > /etc/docker/daemon.json
+
+# Enable Docker under systemd
+RUN systemctl enable docker
+
+# Standalone docker-compose symlink (optional convenience)
+RUN ln -s /usr/libexec/docker/cli-plugins/docker-compose /usr/bin/docker-compose
+
+# UTF-8 locale
+RUN locale-gen en_US.UTF-8
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+
+# Replace default 'ubuntu' user with 'coder' at uid 1000, in docker group, passwordless sudo
+RUN userdel -r ubuntu 2>/dev/null || true && \
+    useradd coder \
+        --create-home \
+        --shell=/bin/bash \
+        --groups=docker \
+        --uid=1000 \
+        --user-group && \
+    echo "coder ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/nopasswd && \
+    chmod 0440 /etc/sudoers.d/nopasswd
+
+USER coder
+RUN pipx ensurepath
+
+USER root
+
+# Coder agent: systemd unit runs /etc/coder/agent-init.sh as the coder user
+# after dockerd is up. The script itself is uploaded at container-create time
+# by the Terraform template (kreuzwerker/docker `upload` block).
+RUN mkdir -p /etc/coder && \
+    cat > /etc/systemd/system/coder-agent.service <<'EOF'
+[Unit]
+Description=Coder Agent
+After=docker.service network-online.target
+Wants=network-online.target docker.service
+ConditionPathExists=/etc/coder/agent-init.sh
+
+[Service]
+Type=simple
+User=coder
+Group=coder
+WorkingDirectory=/home/coder
+PassEnvironment=CODER_AGENT_TOKEN
+ExecStart=/bin/bash /etc/coder/agent-init.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+RUN systemctl enable coder-agent.service
+
+CMD ["/sbin/init"]
