@@ -31,8 +31,16 @@ run_as_user() {
 
 run_as_user 'curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh'
 
+RTK_BIN="$USER_HOME/.local/bin/rtk"
+if [ -x "$RTK_BIN" ]; then
+  ln -sf "$RTK_BIN" /usr/local/bin/rtk
+else
+  echo "rtk feature: expected $RTK_BIN after install, but it was not found." >&2
+  exit 1
+fi
+
 if [ "$AUTO_PATCH_CLAUDE" = "true" ]; then
-  if run_as_user 'command -v claude >/dev/null 2>&1'; then
+  if command -v claude >/dev/null 2>&1; then
     run_as_user 'rtk init -g --auto-patch'
   else
     echo "rtk feature: claude CLI not on PATH, skipping auto-patch. Install a claude-code feature (e.g. ghcr.io/sourecode/devcontainer-features/claude-code) to enable it." >&2

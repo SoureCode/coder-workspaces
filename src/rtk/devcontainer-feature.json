@@ -1,6 +1,6 @@
 {
   "id": "rtk",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "name": "rtk",
   "description": "Installs rtk, an LLM token-reducing CLI proxy, and optionally wires its auto-rewrite hook into Claude Code.",
   "documentationURL": "https://github.com/SoureCode/devcontainer-features/tree/master/src/rtk",
