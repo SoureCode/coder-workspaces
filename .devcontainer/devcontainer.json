@@ -1,10 +1,15 @@
 {
   "name": "devcontainer-templates",
   "build": {
-    "dockerfile": "Dockerfile"
+    "dockerfile": "Dockerfile",
+    "args": {
+      "USERNAME": "${localEnv:DEVCONTAINER_USERNAME:dev}",
+      "USER_UID": "${localEnv:DEVCONTAINER_USER_UID:1000}",
+      "USER_GID": "${localEnv:DEVCONTAINER_USER_GID:1000}"
+    }
   },
-  "remoteUser": "developer",
-  "containerUser": "developer",
+  "remoteUser": "${localEnv:DEVCONTAINER_USERNAME:dev}",
+  "containerUser": "${localEnv:DEVCONTAINER_USERNAME:dev}",
   "features": {
     "ghcr.io/sourecode/devcontainer-features/claude-code:1": {},
     "ghcr.io/sourecode/devcontainer-features/rtk:1": {},
