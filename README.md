@@ -5,6 +5,11 @@ for Claude Code and friends, plus a lightweight `nvm` feature.
 
 Published to GHCR under the `sourecode/devcontainer-features` namespace.
 
+This repo also contains the Coder workspace template
+([`Dockerfile.workspace`](Dockerfile.workspace) and [`main.tf`](main.tf))
+that hosts the devcontainers these features get installed into — see
+[Coder workspace template](#coder-workspace-template).
+
 ## Features
 
 | Feature | OCI reference | Summary |
@@ -74,6 +79,181 @@ Claude login (`~/.claude/.credentials.json`) and chat history (`projects/`,
 `$HOME` as a named volume — see [`docs/persistence.md`](docs/persistence.md)
 for the shared-home pattern we use across every devcontainer.
 
+## Coder workspace template
+
+`Dockerfile.workspace` builds a Coder workspace image and `main.tf` is the
+Coder template that launches it. The workspace container runs its own
+`dockerd` under the [sysbox](https://github.com/nestybox/sysbox) runtime
+(`runtime = "sysbox-runc"` in `main.tf`), so `@devcontainers/cli` inside the
+workspace talks to a local daemon and bind-mount paths resolve against the
+same filesystem the daemon sees.
+
+### Architecture
+
+```
+ host docker daemon
+ └── workspace container  (sourecode/coder-workspace:latest, runtime=sysbox-runc)
+     ├── systemd (PID 1)
+     ├── dockerd
+     ├── coder-agent.service          (main agent)
+     └── @devcontainers/cli up
+         └── devcontainer container(s)   (compose, features, lifecycle all work)
+             └── coder sub-agent         (runs code-server / jetbrains here)
+```
+
+Editors run **inside the devcontainer** via Coder's Dev Containers integration
+(`coder_devcontainer.subagent_id`). When you click "Open in code-server" in the
+Coder UI, you land in the devcontainer's filesystem with its tools, not the
+outer workspace.
+
+One extra container over plain Coder workspaces. No DooD path translation.
+
+### Template files
+
+- `Dockerfile.workspace` — builds the workspace image. Ubuntu + systemd +
+  docker-ce + Node LTS + `@devcontainers/cli` + a `coder` user at UID 1000.
+- `main.tf` — Coder template. Launches the workspace container under
+  `runtime = "sysbox-runc"`, injects `CODER_AGENT_TOKEN` via env, and uploads
+  the agent init script to `/etc/coder/agent-init.sh`. The
+  `coder-agent.service` systemd unit (baked into the image, see
+  `Dockerfile.workspace`) runs that script on boot.
+
+### Prerequisites (on the Docker host)
+
+1. Linux kernel >= 5.12 (>= 6.3 ideal, avoids shiftfs entirely)
+2. Native Docker (not the snap) at `/usr/bin/docker`
+3. Sysbox installed (see below)
+4. Your existing Coder server (this template was developed against a
+   docker-compose-deployed Coder)
+
+### Install sysbox
+
+Zero-container-deletion install, tolerates a single `dockerd` restart.
+
+```bash
+# 1. pre-populate /etc/docker/daemon.json so sysbox's post-install step
+#    doesn't need to touch the network config itself
+sudo tee /etc/docker/daemon.json >/dev/null <<'JSON'
+{
+  "bip": "172.24.0.1/16",
+  "default-address-pools": [
+    { "base": "172.31.0.0/16", "size": 24 }
+  ]
+}
+JSON
+
+# Pick CIDRs free of your existing networks:
+#   docker network inspect $(docker network ls -q) | grep -i subnet
+
+# 2. one controlled restart so dockerd loads the keys
+sudo systemctl restart docker
+
+# 3. install sysbox (Ubuntu/Debian amd64)
+wget https://downloads.nestybox.com/sysbox/releases/v0.7.0/sysbox-ce_0.7.0-0.linux_amd64.deb
+sudo apt-get install -y jq fuse3 ./sysbox-ce_0.7.0-0.linux_amd64.deb
+
+# 4. verify
+docker info | grep -i runtime                # should list sysbox-runc
+systemctl status sysbox --no-pager
+```
+
+Smoke test that nested Docker works under sysbox:
+
+```bash
+CID=$(docker run -d --rm --runtime=sysbox-runc nestybox/ubuntu-noble-systemd-docker)
+sleep 15
+docker exec "$CID" docker run --rm hello-world   # should print the hello-world greeting
+docker stop "$CID"
+```
+
+### Build the workspace image
+
+```bash
+docker build -f Dockerfile.workspace -t sourecode/coder-workspace:latest .
+```
+
+The image must exist in the host's local image store (or in a registry the
+host can pull from). It is referenced by `var.workspace_image` in `main.tf`.
+
+### Push the template to Coder
+
+If your Coder runs inside a docker-compose stack and you prefer not to install
+`coder` on the host, use the CLI that's baked into the Coder server image:
+
+```bash
+# copy the template files into the Coder container
+docker exec coder-coder-1 mkdir -p /tmp/tpl
+docker cp ./main.tf              coder-coder-1:/tmp/tpl/main.tf
+docker cp ./Dockerfile.workspace coder-coder-1:/tmp/tpl/Dockerfile.workspace
+
+# login once
+docker exec -it coder-coder-1 /opt/coder login http://localhost:7080
+
+# push
+docker exec -it coder-coder-1 /opt/coder templates push coder-template -d /tmp/tpl --yes
+```
+
+Or install the `coder` CLI locally and push from the repo dir directly.
+
+#### Important: template variables
+
+If you push a newer version of the template but workspaces still launch from
+an old image, check **Templates → Settings → Variables** in the Coder UI.
+A persisted override for `workspace_image` wins over the `default` in `main.tf`
+across version bumps. Clear it or set it to `sourecode/coder-workspace:latest`.
+
+### Create / update workspaces
+
+A workspace pinned to an older template version does not auto-upgrade. After
+pushing a new version, either:
+
+- Click **Update** on the workspace in the UI, or
+- `coder update <workspace-name>` (from wherever you have the CLI)
+
+### Troubleshooting
+
+- **"Agent is taking longer than expected to connect"** — the workspace
+  container exited instead of running systemd. Check:
+  ```bash
+  CID=$(docker ps -a --filter "name=coder-" -q | head -1)
+  docker inspect "$CID" --format '{{.HostConfig.Runtime}} {{.Config.Image}} {{.State.Status}}'
+  docker logs "$CID" | tail -50
+  ```
+  Runtime must be `sysbox-runc` (hardcoded in `main.tf`); image should match
+  whatever `var.workspace_image` resolves to (default
+  `sourecode/coder-workspace:latest`). If either is wrong, fix the template /
+  variable override and recreate.
+
+- **Agent up but nothing connects** — inspect systemd and the agent unit:
+  ```bash
+  docker exec "$CID" systemctl is-system-running
+  docker exec "$CID" systemctl status docker coder-agent --no-pager
+  docker exec "$CID" journalctl -u coder-agent --no-pager -n 100
+  docker exec "$CID" ls -la /etc/coder/           # expect agent-init.sh present and executable
+  docker exec "$CID" bash -lc "tr '\0' '\n' < /proc/1/environ | grep CODER_AGENT_TOKEN"
+  ```
+
+- **Inner `@devcontainers/cli up` hangs / errors** — run it by hand inside the
+  workspace as the `coder` user to see the real output:
+  ```bash
+  docker exec -u coder -it "$CID" bash -lc "cd ~/<repo> && devcontainer up --workspace-folder ."
+  ```
+
+### Why this shape
+
+`@devcontainers/cli` assumes the CLI and the Docker daemon share a filesystem.
+When Coder launches a workspace container and mounts the host socket in, the
+CLI (inside the workspace) and the daemon (on the host) see different
+filesystems — every bind-mount path the CLI emits is wrong from the daemon's
+point of view. That's the root cause of the
+`bind source path does not exist` failures.
+
+The principled fixes are: path alignment (fragile), DinD (insecure),
+sysbox (safe DinD), envbuilder (collapse into one container), or CI pre-build
+(move work out of runtime). This template uses sysbox so the workspace's own
+`dockerd` runs safely inside it, paths resolve naturally, and compose-based
+devcontainers work unchanged.
+
 ## Developing on this repo
 
 ### Repository layout
@@ -97,6 +277,8 @@ src/
 docs/
   migration-guide.md
   persistence.md
+Dockerfile.workspace              # Coder workspace image (Ubuntu + systemd + dockerd + @devcontainers/cli)
+main.tf                           # Coder template that launches the workspace under sysbox-runc
 ```
 
 Each feature directory follows the [Dev Container Features spec](https://containers.dev/implementors/features/):
