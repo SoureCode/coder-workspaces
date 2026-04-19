@@ -7,6 +7,7 @@ FROM debian:trixie-slim
 # merged and released (tracks `overrideFeatureInstallOrder` support).
 ENV NVM_DIR=/usr/local/share/nvm
 ENV NVM_VERSION=0.40.4
+SHELL ["/bin/bash", "-c"]
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends curl ca-certificates; \
