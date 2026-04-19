@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
-# claude-code feature installer. TEMPORARY — remove this feature in favor of
-# ghcr.io/anthropics/devcontainer-features/claude-code once
-# https://github.com/anthropics/devcontainer-features/pull/37 is merged.
+# claude-code feature installer.
+#
+# Requires Node.js on PATH (provided by the nvm feature via `dependsOn`).
+#
+# The official installer writes to $HOME/.local/bin. Because our devcontainers
+# mount $HOME as a named volume (see docs/persistence.md), anything dropped in
+# the user's home at build time is hidden on any run where the volume already
+# has content. Install into a scratch HOME and relocate the binary to
+# /usr/local/bin so it lives in image layers, outside the mount.
 set -e
-
-USER_NAME="${_REMOTE_USER:-${USERNAME:-root}}"
-if [ "$USER_NAME" = "root" ]; then
-  USER_HOME="/root"
-else
-  USER_HOME="$(getent passwd "$USER_NAME" | cut -d: -f6)"
-fi
 
 if ! command -v curl >/dev/null 2>&1; then
   apt-get update
@@ -17,20 +16,15 @@ if ! command -v curl >/dev/null 2>&1; then
   rm -rf /var/lib/apt/lists/*
 fi
 
-run_as_user() {
-  if [ "$USER_NAME" = "root" ]; then
-    bash -c "$1"
-  else
-    su - "$USER_NAME" -c "$1"
-  fi
-}
+SCRATCH="$(mktemp -d)"
+trap 'rm -rf "$SCRATCH"' EXIT
 
-run_as_user 'curl -fsSL https://claude.ai/install.sh | bash'
+HOME="$SCRATCH" curl -fsSL https://claude.ai/install.sh | HOME="$SCRATCH" bash
 
-CLAUDE_BIN="$USER_HOME/.local/bin/claude"
-if [ -x "$CLAUDE_BIN" ]; then
-  ln -sf "$CLAUDE_BIN" /usr/local/bin/claude
-else
-  echo "claude-code feature: expected $CLAUDE_BIN after install, but it was not found." >&2
+SRC_BIN="$SCRATCH/.local/bin/claude"
+if [ ! -x "$SRC_BIN" ]; then
+  echo "claude-code feature: expected $SRC_BIN after install, but it was not found." >&2
   exit 1
 fi
+
+install -m 0755 "$SRC_BIN" /usr/local/bin/claude

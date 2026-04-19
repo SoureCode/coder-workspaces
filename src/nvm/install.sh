@@ -35,6 +35,32 @@ export NVM_DIR="$NVM_DIR"
 EOF
 chmod 644 /etc/profile.d/nvm.sh
 
+# Non-login interactive bash shells (VS Code / code-server terminals) source
+# /etc/bash.bashrc, not /etc/profile.d. Without this hook, the `nvm` shell
+# function isn't defined in those shells even though `node` / `npm` work via
+# the /usr/local/bin symlinks below. Idempotent guard so re-running the
+# feature install doesn't duplicate the block.
+if [ ! -f /etc/bash.bashrc ] || ! grep -q 'nvm-feature-hook' /etc/bash.bashrc; then
+  cat >>/etc/bash.bashrc <<'EOF'
+
+# nvm-feature-hook: sourced by non-login interactive bash shells.
+if [ -z "${NVM_DIR:-}" ] && [ -s /etc/profile.d/nvm.sh ]; then
+  . /etc/profile.d/nvm.sh
+fi
+EOF
+fi
+
+# Same for zsh if the distro ships /etc/zsh/zshrc.
+if [ -f /etc/zsh/zshrc ] && ! grep -q 'nvm-feature-hook' /etc/zsh/zshrc; then
+  cat >>/etc/zsh/zshrc <<'EOF'
+
+# nvm-feature-hook: sourced by interactive zsh shells.
+if [ -z "${NVM_DIR:-}" ] && [ -s /etc/profile.d/nvm.sh ]; then
+  . /etc/profile.d/nvm.sh
+fi
+EOF
+fi
+
 if [ "$NODE_VERSION" != "none" ]; then
   if [ "$NODE_VERSION" = "lts" ]; then
     NVM_INSTALL_ARG="--lts"

@@ -9,12 +9,12 @@ Published to GHCR under the `sourecode/devcontainer-features` namespace.
 
 | Feature | OCI reference | Summary |
 |---|---|---|
-| `claude-code` | `ghcr.io/sourecode/devcontainer-features/claude-code:1` | Installs the Claude Code CLI via the official native installer (no Node.js required). **Temporary** — will be retired once [anthropics/devcontainer-features#37](https://github.com/anthropics/devcontainer-features/pull/37) is merged. |
-| `rtk` | `ghcr.io/sourecode/devcontainer-features/rtk:1` | Installs [rtk](https://github.com/rtk-ai/rtk), an LLM token-reducing CLI proxy; auto-patches Claude Code if present. |
+| `claude-code` | `ghcr.io/sourecode/devcontainer-features/claude-code:2` | Installs the Claude Code CLI via the official native installer into `/usr/local/bin`, so the binary survives home-directory volume mounts. Requires Node.js — automatically pulls in the `nvm` feature via `dependsOn`. |
+| `rtk` | `ghcr.io/sourecode/devcontainer-features/rtk:2` | Installs [rtk](https://github.com/rtk-ai/rtk), an LLM token-reducing CLI proxy, into `/usr/local/bin`. Auto-patches Claude Code via `postCreateCommand` so the hook is written against the mounted home, not the image. |
 | `context-mode` | `ghcr.io/sourecode/devcontainer-features/context-mode:1` | Installs the [`context-mode`](https://github.com/mksglu/context-mode) Claude Code plugin. |
-| `nvm` | `ghcr.io/sourecode/devcontainer-features/nvm:2` | Installs [nvm](https://github.com/nvm-sh/nvm) system-wide and optionally a Node version (defaults to LTS), with `node`/`npm`/`npx` symlinked into `/usr/local/bin`. No yarn. |
+| `nvm` | `ghcr.io/sourecode/devcontainer-features/nvm:2` | Installs [nvm](https://github.com/nvm-sh/nvm) system-wide at `/usr/local/share/nvm` and optionally a Node version (defaults to LTS), with `node`/`npm`/`npx` symlinked into `/usr/local/bin`. No yarn. |
 
-`rtk` and `context-mode` declare `installsAfter` for both `ghcr.io/sourecode/devcontainer-features/claude-code` and `ghcr.io/anthropics/devcontainer-features/claude-code`, so the runtime orders them after whichever claude-code feature is present.
+All binaries land in `/usr/local/bin` (or `/usr/local/share/...`) rather than the user's home, so they survive the shared home-volume pattern described in [`docs/persistence.md`](docs/persistence.md). `rtk` and `context-mode` declare `installsAfter` for both `ghcr.io/sourecode/devcontainer-features/claude-code` and `ghcr.io/anthropics/devcontainer-features/claude-code`, so the runtime orders them after whichever claude-code feature is present.
 
 ## Using the features
 
@@ -25,8 +25,8 @@ image you already use:
 {
   "image": "debian:trixie-slim",
   "features": {
-    "ghcr.io/sourecode/devcontainer-features/claude-code:1": {},
-    "ghcr.io/sourecode/devcontainer-features/rtk:1": {
+    "ghcr.io/sourecode/devcontainer-features/claude-code:2": {},
+    "ghcr.io/sourecode/devcontainer-features/rtk:2": {
       "autoPatchClaude": true
     },
     "ghcr.io/sourecode/devcontainer-features/context-mode:1": {}
@@ -34,15 +34,18 @@ image you already use:
 }
 ```
 
-Features run inside the image during build (as root), installing into the
-container's `remoteUser` home. After rebuild, the tools are available on the
-user's `PATH`.
+Features run inside the image during build (as root) and install system-wide
+under `/usr/local/`. After rebuild, the tools are available on every user's
+`PATH` with no home-directory footprint.
 
 ### Feature options
 
 #### `claude-code`
 
-No options. Always installs the latest release.
+No options. Always installs the latest release. Declares `dependsOn` for
+`ghcr.io/sourecode/devcontainer-features/nvm:2`, so adding `claude-code` to a
+devcontainer automatically pulls in `nvm` (and therefore Node.js) even if you
+don't list `nvm` yourself.
 
 #### `rtk`
 
@@ -66,9 +69,9 @@ resolve the correct install order automatically).
 ### Persisting Claude Code state
 
 Claude login (`~/.claude/.credentials.json`) and chat history (`projects/`,
-`sessions/`, `session-env/`) are not persisted across rebuilds by default. See
-[`docs/persistence.md`](docs/persistence.md) for mount strategies (host login
-bind mount, per-project credentials, or a shared named volume).
+`sessions/`, `session-env/`) live in the user's home. Persist them by mounting
+`$HOME` as a named volume — see [`docs/persistence.md`](docs/persistence.md)
+for the shared-home pattern we use across every devcontainer.
 
 ## Developing on this repo
 
@@ -91,6 +94,7 @@ src/
     devcontainer-feature.json
     install.sh
 docs/
+  migration-guide.md
   persistence.md
 ```
 
@@ -100,9 +104,21 @@ that runs as `root` inside the container during the build.
 
 ### Writing an install.sh
 
-- `install.sh` starts as `root`. To land files in the remote user's home,
-  resolve the user via `_REMOTE_USER` / `_REMOTE_USER_HOME` (set by the
-  devcontainer runtime) and `su - "$USER"` for user-scoped steps.
+- `install.sh` starts as `root`. **Prefer system-wide install paths**
+  (`/usr/local/bin`, `/usr/local/share/<id>`, `/etc/profile.d`) over anything
+  under the remote user's home. The shared-home volume pattern
+  ([`docs/persistence.md`](docs/persistence.md)) means writes into
+  `/home/<user>` at build time only appear on first-create and then get
+  shadowed by the named volume on every subsequent run.
+- If a tool's upstream installer insists on writing to `$HOME`, run it under
+  a scratch `HOME` (`mktemp -d`) and relocate the resulting binary to
+  `/usr/local/bin` (see `src/claude-code/install.sh`). If the tool supports
+  an override env var (e.g. `RTK_INSTALL_DIR`), pass it directly.
+- For anything that genuinely needs to live in the user's real home
+  (credentials, plugin state, shell-rc tweaks), emit a script to
+  `/usr/local/share/<id>/post-create.sh` and wire it via `postCreateCommand`
+  in `devcontainer-feature.json` so it runs against the mounted home, not
+  the image.
 - Feature options are exposed as **uppercased** environment variables (e.g.
   option `autoPatchClaude` → `$AUTOPATCHCLAUDE`). Always apply a default:
   `"${FOO:-true}"`.
@@ -111,9 +127,9 @@ that runs as `root` inside the container during the build.
 - Don't assume the base image has any particular tools — install `curl`,
   `ca-certificates`, etc. from `apt-get` if absent. Keep installs idempotent
   where reasonable.
-- Declare dependencies with `installsAfter` so the runtime orders features
-  correctly (e.g. `rtk` and `context-mode` list both the `sourecode` and
-  `anthropics` claude-code feature IDs so either ordering target works).
+- Use `installsAfter` for soft ordering (e.g. `rtk` lists both the `sourecode`
+  and `anthropics` claude-code IDs), and `dependsOn` for hard requirements
+  that should auto-pull another feature (e.g. `claude-code` → `nvm`).
 
 ### Testing a feature locally
 
