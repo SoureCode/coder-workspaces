@@ -1,0 +1,14 @@
+{
+  "id": "sccache",
+  "version": "1.0.0",
+  "name": "sccache",
+  "description": "Installs Mozilla sccache from GitHub release binaries into /usr/local/bin. Distro-agnostic (musl-linked). Supports x86_64 and aarch64. Pair with SCCACHE_DIR / SCCACHE_CACHE_SIZE env vars in devcontainer.json to persist the cache across rebuilds.",
+  "documentationURL": "https://github.com/SoureCode/devcontainer-features/tree/master/src/sccache",
+  "options": {
+    "version": {
+      "type": "string",
+      "default": "latest",
+      "description": "sccache release to install. `latest` resolves to the most recent tag from mozilla/sccache GitHub releases. Otherwise a specific version like `0.8.2`."
+    }
+  }
+}
