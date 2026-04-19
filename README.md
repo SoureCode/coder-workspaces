@@ -10,7 +10,7 @@ Published to GHCR under the `sourecode/devcontainer-features` namespace.
 
 | Feature | OCI reference | Summary |
 |---|---|---|
-| `nvm` | `ghcr.io/sourecode/devcontainer-features/nvm:1` | Installs [nvm](https://github.com/nvm-sh/nvm) and optionally a Node version (defaults to LTS). No yarn. |
+| `nvm` | `ghcr.io/sourecode/devcontainer-features/nvm:2` | Installs [nvm](https://github.com/nvm-sh/nvm) system-wide and optionally a Node version (defaults to LTS), with `node`/`npm`/`npx` symlinked into `/usr/local/bin`. No yarn. |
 | `rtk` | `ghcr.io/sourecode/devcontainer-features/rtk:1` | Installs [rtk](https://github.com/rtk-ai/rtk), an LLM token-reducing CLI proxy; auto-patches Claude Code if present. |
 | `context-mode` | `ghcr.io/sourecode/devcontainer-features/context-mode:1` | Installs the [`context-mode`](https://github.com/mksglu/context-mode) Claude Code plugin. |
 
@@ -28,7 +28,7 @@ image you already use:
 {
   "image": "debian:trixie-slim",
   "features": {
-    "ghcr.io/sourecode/devcontainer-features/nvm:1": {
+    "ghcr.io/sourecode/devcontainer-features/nvm:2": {
       "node": "lts"
     },
     "ghcr.io/anthropics/devcontainer-features/claude-code:1": {},

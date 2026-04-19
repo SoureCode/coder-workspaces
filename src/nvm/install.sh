@@ -6,14 +6,14 @@ set -e
 NVM_VERSION="${VERSION:-0.40.4}"
 NODE_VERSION="${NODE:-lts}"
 
+NVM_DIR=/usr/local/share/nvm
+export NVM_DIR
+
 USER_NAME="${_REMOTE_USER:-${USERNAME:-root}}"
-USER_HOME="${_REMOTE_USER_HOME:-}"
-if [ -z "$USER_HOME" ]; then
-  if [ "$USER_NAME" = "root" ]; then
-    USER_HOME="/root"
-  else
-    USER_HOME="$(getent passwd "$USER_NAME" | cut -d: -f6)"
-  fi
+if [ "$USER_NAME" = "root" ]; then
+  USER_GROUP="root"
+else
+  USER_GROUP="$(id -gn "$USER_NAME")"
 fi
 
 if ! command -v curl >/dev/null 2>&1; then
@@ -22,25 +22,18 @@ if ! command -v curl >/dev/null 2>&1; then
   rm -rf /var/lib/apt/lists/*
 fi
 
-run_as_user() {
-  if [ "$USER_NAME" = "root" ]; then
-    bash -c "$1"
-  else
-    su - "$USER_NAME" -c "$1"
-  fi
-}
+mkdir -p "$NVM_DIR"
+chown "$USER_NAME:$USER_GROUP" "$NVM_DIR"
+chmod g+ws "$NVM_DIR"
 
-run_as_user "curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v${NVM_VERSION}/install.sh | PROFILE=/dev/null bash"
+curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/v${NVM_VERSION}/install.sh" | PROFILE=/dev/null bash
 
-NVM_INIT='export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"; [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"'
-
-for rc in "$USER_HOME/.bashrc" "$USER_HOME/.zshrc" "$USER_HOME/.profile"; do
-  [ -f "$rc" ] || continue
-  if ! grep -q 'NVM_DIR="$HOME/.nvm"' "$rc"; then
-    printf '\n# nvm\n%s\n' "$NVM_INIT" >>"$rc"
-    chown "$USER_NAME:$(id -gn "$USER_NAME")" "$rc" 2>/dev/null || true
-  fi
-done
+cat >/etc/profile.d/nvm.sh <<EOF
+export NVM_DIR="$NVM_DIR"
+[ -s "\$NVM_DIR/nvm.sh" ] && \\. "\$NVM_DIR/nvm.sh"
+[ -s "\$NVM_DIR/bash_completion" ] && \\. "\$NVM_DIR/bash_completion"
+EOF
+chmod 644 /etc/profile.d/nvm.sh
 
 if [ "$NODE_VERSION" != "none" ]; then
   if [ "$NODE_VERSION" = "lts" ]; then
@@ -50,5 +43,18 @@ if [ "$NODE_VERSION" != "none" ]; then
     NVM_INSTALL_ARG="$NODE_VERSION"
     NVM_ALIAS_TARGET="$NODE_VERSION"
   fi
-  run_as_user "$NVM_INIT && nvm install $NVM_INSTALL_ARG && nvm alias default '$NVM_ALIAS_TARGET'"
+
+  # shellcheck disable=SC1091
+  . "$NVM_DIR/nvm.sh"
+  # shellcheck disable=SC2086
+  nvm install $NVM_INSTALL_ARG
+  nvm alias default "$NVM_ALIAS_TARGET"
+
+  NODE_BIN_DIR="$(dirname "$(nvm which default)")"
+  for bin in node npm npx corepack; do
+    [ -x "$NODE_BIN_DIR/$bin" ] || continue
+    ln -sf "$NODE_BIN_DIR/$bin" "/usr/local/bin/$bin"
+  done
 fi
+
+chown -R "$USER_NAME:$USER_GROUP" "$NVM_DIR"

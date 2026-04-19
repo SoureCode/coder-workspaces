@@ -1,8 +1,8 @@
 {
   "id": "nvm",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "name": "nvm",
-  "description": "Installs nvm (Node Version Manager) into the remote user's home and optionally a Node version (defaults to LTS). No yarn.",
+  "description": "Installs nvm (Node Version Manager) system-wide at /usr/local/share/nvm and optionally a Node version (defaults to LTS), with node/npm/npx symlinked into /usr/local/bin so every shell and subsequent feature sees them. No yarn.",
   "documentationURL": "https://github.com/SoureCode/devcontainer-templates/tree/master/src/nvm",
   "options": {
     "version": {
