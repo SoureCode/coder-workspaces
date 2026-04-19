@@ -31,3 +31,4 @@ jobs:
           base-path-to-features: "./src"
           oci-registry: "ghcr.io"
           features-namespace: "sourecode/devcontainer-features"
+          disable-repo-tagging: "true"
