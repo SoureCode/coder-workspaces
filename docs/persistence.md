@@ -1,140 +1,97 @@
-# Persisting Claude Code data across container rebuilds
+# Persisting state across devcontainer rebuilds
 
-Claude Code stores runtime state under `~/.claude/` in the remote user's home.
-Nothing in this state is preserved when a devcontainer is rebuilt, so a rebuild
-forces you to re-run `claude /login` and loses your chat history. The paths
-worth persisting are:
+Our convention: mount a single named volume at the user's home directory,
+scoped per-Coder-user, shared across every devcontainer that user opens.
+Everything that lives under `$HOME` persists automatically — bash history,
+git config, SSH keys, tool caches, Claude Code state, sccache cache, pipx
+installs, anything.
 
-| Path                                  | Contents                             |
-| ------------------------------------- | ------------------------------------ |
-| `~/.claude/.credentials.json`         | OAuth tokens (after `claude /login`) |
-| `~/.claude/projects/`                 | per-project chat / session history   |
-| `~/.claude/sessions/`                 | session snapshots                    |
-| `~/.claude/session-env/`              | per-session env captures             |
-| `~/.claude/<plugin-id>/`              | per-plugin runtime data (e.g. `context-mode/` keeps its FTS5 index here) |
+## The mount
 
-> All examples below assume `/home/<user>/` as the remote home. Replace `<user>`
-> with whatever your base image / feature uses (often `vscode`, `node`, or
-> `dev`).
-
-> **Never** mount a volume or bind mount at `~/.claude/` itself — doing so
-> shadows anything a feature (e.g. `anthropics/claude-code`, our `rtk`, our
-> `context-mode`) installed into that directory at build time, including
-> `settings.json`, the plugin cache, and the `claude` CLI's own baked state.
-
-## Directories: named volumes
-
-Named volumes only work for **directory** targets. If you point a `type=volume`
-mount at a file path, Docker silently creates an empty **directory** there and
-Claude will then fail to read the file.
+In every `.devcontainer/devcontainer.json`:
 
 ```jsonc
 {
   "mounts": [
-    "source=claude-projects,target=/home/<user>/.claude/projects,type=volume",
-    "source=claude-sessions,target=/home/<user>/.claude/sessions,type=volume",
-    "source=claude-session-env,target=/home/<user>/.claude/session-env,type=volume"
+    "source=devhome-${localEnv:OWNER_USERNAME:shared},target=/home/${localEnv:DEVCONTAINER_USERNAME:dev},type=volume"
   ]
 }
 ```
 
-If you use `context-mode` and want its knowledge index to survive rebuilds,
-add its plugin directory too:
+- `OWNER_USERNAME` is injected by the Coder template (`coder_agent.main.env`)
+  and resolves to the Coder workspace owner's username.
+- `DEVCONTAINER_USERNAME` is the in-container user (also from
+  `coder_agent.main.env`; default `dev`).
+- Running outside Coder, both fall back to sensible defaults —
+  `devhome-shared` mounted at `/home/dev`.
 
-```jsonc
-"source=claude-context-mode,target=/home/<user>/.claude/context-mode,type=volume"
+One volume per Coder user. Open three different project devcontainers and
+they all see the same home.
+
+## What persists automatically
+
+Any path under `$HOME`. A non-exhaustive list that matters for us:
+
+| Path                          | Contents                                           |
+| ----------------------------- | -------------------------------------------------- |
+| `~/.bash_history`             | Shell history                                      |
+| `~/.gitconfig`                | Git identity + signing config                      |
+| `~/.ssh/`                     | SSH keys (we auto-populate via Coder sub-agent)    |
+| `~/.claude/`                  | Claude Code credentials, sessions, plugin data     |
+| `~/.cache/sccache/`           | sccache compilation cache                          |
+| `~/.cargo/`, `~/.rustup/`     | Rust toolchain + crate cache (if installed)        |
+| `~/.local/`                   | pipx installs, user-local binaries                 |
+| `~/.config/`                  | Per-app config                                     |
+
+Nothing extra to configure. `SCCACHE_DIR` and `CLAUDE_CONFIG_DIR` default to
+paths under `$HOME`, so the env vars the old pattern used to override those
+are unnecessary and should be removed.
+
+## What doesn't persist
+
+- Anything **outside** `$HOME` — `/usr/local/...`, `/opt/...`, etc. These come
+  from the image, the Dockerfile, or feature installs. Rebuild the image to
+  change them.
+- The workspace folder itself (usually `/workspace`). This is bind-mounted
+  from the outer Coder workspace container's `/home/<coder>/<repo>`, which
+  has its own persistence (via the outer `docker_volume.home_volume` in the
+  Coder template). Your git working tree survives outer-workspace restarts;
+  inside the devcontainer it's the same filesystem surface.
+
+## First-create seeding
+
+When Docker mounts an empty named volume over a non-empty directory, it
+copies the image's directory contents into the volume. So the first time a
+user opens any devcontainer, the image's `/home/<user>` (skeleton dotfiles,
+defaults from `/etc/skel`) seeds the volume.
+
+After that, the volume wins. Subsequent rebuilds of the image will **not**
+propagate changes to the image's `$HOME` into the existing volume.
+
+Consequence: don't put long-lived shell config in `~/.bashrc` in the
+Dockerfile — it'd be stuck at whatever got seeded on first-create. Use
+`/etc/bash.bashrc` instead (system-wide, sourced by non-login interactive
+bashes on Debian/Ubuntu, image-owned, always authoritative).
+
+## Cross-project side effects
+
+One home for every devcontainer means:
+
+- Pros: universal `~/.gitconfig`, `~/.ssh/*`, one Claude Code login, one
+  bash history, shared sccache/`~/.cargo` caches.
+- Cons: tools that write env-specific state to `$HOME` (some pyenv / nvm
+  layouts, project-specific `~/.config/*` files) will leak between
+  projects. For most dotfile-level state this is exactly what you want.
+  If a specific tool misbehaves, override its config dir via `containerEnv`
+  to point at a project-scoped path under the repo.
+
+## Resetting a home
+
+If the shared home gets into a bad state, nuke the volume from the host:
+
+```bash
+docker volume rm devhome-<owner-username>
 ```
 
-## Credentials (`.credentials.json`): bind mount
-
-`.credentials.json` is a single file, so it must be persisted via `type=bind`
-(not `type=volume`). Three options, from easiest to most isolated:
-
-### 1. Share the host's login (recommended if you use Claude on the host too)
-
-```jsonc
-{
-  "mounts": [
-    "source=${localEnv:HOME}/.claude/.credentials.json,target=/home/<user>/.claude/.credentials.json,type=bind,consistency=cached"
-  ]
-}
-```
-
-The file must exist on the host before the container starts — run
-`claude /login` on the host once. Every container mounting the file is then
-authenticated as you.
-
-### 2. Container-only login (per-project credentials file on host)
-
-If you want the container to manage its own login independent of the host,
-create the file yourself and bind-mount it:
-
-```sh
-mkdir -p .devcontainer/claude-state
-touch .devcontainer/claude-state/.credentials.json
-chmod 600 .devcontainer/claude-state/.credentials.json
-echo "claude-state/" >> .devcontainer/.gitignore
-```
-
-Then in `.devcontainer/devcontainer.json`:
-
-```jsonc
-{
-  "mounts": [
-    "source=${localWorkspaceFolder}/.devcontainer/claude-state/.credentials.json,target=/home/<user>/.claude/.credentials.json,type=bind"
-  ]
-}
-```
-
-Run `claude /login` inside the container once; the token is written to the
-bind-mounted file and survives rebuilds.
-
-### 3. Named-volume login, host-independent (shared across projects)
-
-`type=volume` cannot target a single file, but it can target a directory.
-Combine a named volume with a symlink inside the image to redirect
-`.credentials.json` into the mounted directory. Add the following to a custom
-Dockerfile or a feature that runs before `anthropics/claude-code`:
-
-```dockerfile
-# The symlink is created dangling and resolves on first write, so the normal
-# ~/.claude/.credentials.json path continues to behave as Claude expects.
-RUN install -d -o <user> -g <user> /home/<user>/.claude-shared && \
-    ln -s /home/<user>/.claude-shared/.credentials.json \
-          /home/<user>/.claude/.credentials.json
-```
-
-Then in every `.devcontainer/devcontainer.json` that should share the login:
-
-```jsonc
-{
-  "mounts": [
-    "source=claude-shared,target=/home/<user>/.claude-shared,type=volume"
-  ]
-}
-```
-
-Run `claude /login` in any container once; the token lands in the
-`claude-shared` named volume, and every other container mounting that same
-volume resolves the symlink to the same file. No host dependency.
-
-## Comparing the credential strategies
-
-| Approach                                              | Host needs Claude? | Shared across container instances?                       |
-| ----------------------------------------------------- | ------------------ | -------------------------------------------------------- |
-| Bind-mount the host's `~/.claude/.credentials.json`   | yes                | **yes** — same file, any number of containers            |
-| Bind-mount a dedicated host path                      | no                 | **yes** — any container mounting the same host path      |
-| Project-local `.devcontainer/claude-state/`           | no                 | no — each project has its own file                       |
-| Named-volume + symlink                                | no                 | **yes** — any container mounting the same named volume   |
-
-## Notes
-
-- `CLAUDE_CONFIG_DIR` can redirect Claude Code's config root to a completely
-  different path. If you set it, all of the mount targets above need to move
-  accordingly.
-- `settings.json.bak` (created by `rtk init`'s `--auto-patch`) does not need
-  to be persisted.
-- If you want to pin specific `settings.json` content into the image, do it in
-  a feature's `install.sh` (`install -m 0644 settings.json $USER_HOME/.claude/`),
-  not via a mount — settings that have to match the build are a build-time
-  concern, not a runtime one.
+Next devcontainer start re-seeds it from the image. You'll need to
+re-login to Claude Code, re-set any interactive state, etc.
