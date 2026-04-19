@@ -4,17 +4,8 @@
     "dockerfile": "Dockerfile"
   },
   "features": {
-    "ghcr.io/sourecode/devcontainer-features/nvm:2": {
-      "node": "lts"
-    },
     "ghcr.io/anthropics/devcontainer-features/claude-code:1": {},
     "ghcr.io/sourecode/devcontainer-features/rtk:1": {},
     "ghcr.io/sourecode/devcontainer-features/context-mode:1": {}
-  },
-  "overrideFeatureInstallOrder": [
-    "ghcr.io/sourecode/devcontainer-features/nvm",
-    "ghcr.io/anthropics/devcontainer-features/claude-code",
-    "ghcr.io/sourecode/devcontainer-features/rtk",
-    "ghcr.io/sourecode/devcontainer-features/context-mode"
-  ]
+  }
 }
