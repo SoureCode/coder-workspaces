@@ -11,7 +11,7 @@ Published to GHCR under the `sourecode/devcontainer-features` namespace.
 |---|---|---|
 | `claude-code` | `ghcr.io/sourecode/devcontainer-features/claude-code:2` | Installs the Claude Code CLI via the official native installer into `/usr/local/bin`, so the binary survives home-directory volume mounts. Requires Node.js — automatically pulls in the `nvm` feature via `dependsOn`. |
 | `rtk` | `ghcr.io/sourecode/devcontainer-features/rtk:2` | Installs [rtk](https://github.com/rtk-ai/rtk), an LLM token-reducing CLI proxy, into `/usr/local/bin`. Auto-patches Claude Code via `postCreateCommand` so the hook is written against the mounted home, not the image. |
-| `context-mode` | `ghcr.io/sourecode/devcontainer-features/context-mode:1` | Installs the [`context-mode`](https://github.com/mksglu/context-mode) Claude Code plugin. |
+| `context-mode` | `ghcr.io/sourecode/devcontainer-features/context-mode:2` | Installs the [`context-mode`](https://github.com/mksglu/context-mode) Claude Code plugin via `postCreateCommand`, so the plugin lands in the mounted `~/.claude` rather than the image. |
 | `nvm` | `ghcr.io/sourecode/devcontainer-features/nvm:2` | Installs [nvm](https://github.com/nvm-sh/nvm) system-wide at `/usr/local/share/nvm` and optionally a Node version (defaults to LTS), with `node`/`npm`/`npx` symlinked into `/usr/local/bin`. No yarn. |
 
 All binaries land in `/usr/local/bin` (or `/usr/local/share/...`) rather than the user's home, so they survive the shared home-volume pattern described in [`docs/persistence.md`](docs/persistence.md). `rtk` and `context-mode` declare `installsAfter` for both `ghcr.io/sourecode/devcontainer-features/claude-code` and `ghcr.io/anthropics/devcontainer-features/claude-code`, so the runtime orders them after whichever claude-code feature is present.
@@ -29,7 +29,7 @@ image you already use:
     "ghcr.io/sourecode/devcontainer-features/rtk:2": {
       "autoPatchClaude": true
     },
-    "ghcr.io/sourecode/devcontainer-features/context-mode:1": {}
+    "ghcr.io/sourecode/devcontainer-features/context-mode:2": {}
   }
 }
 ```
@@ -55,9 +55,10 @@ don't list `nvm` yourself.
 
 #### `context-mode`
 
-No options. Fails if the `claude` CLI is not on the user's PATH — add a
-claude-code feature as well (the `installsAfter` hint then makes the CLI
-resolve the correct install order automatically).
+No options. Runs via `postCreateCommand`, so it no-ops (with a warning) if
+the `claude` CLI isn't on PATH when the container is created — add a
+claude-code feature as well. `installsAfter` handles ordering for either
+`sourecode/` or `anthropics/` claude-code.
 
 #### `nvm`
 
