@@ -18,4 +18,4 @@ if ! run_as_user 'command -v claude >/dev/null 2>&1'; then
   exit 1
 fi
 
-run_as_user 'claude plugin marketplace add mksglu/context-mode && claude plugin install context-mode@context-mode'
+run_as_user 'claude plugin marketplace add https://github.com/mksglu/context-mode.git && claude plugin install context-mode@context-mode'
