@@ -1,8 +1,7 @@
 # SoureCode Devcontainer Features
 
 A small collection of [Dev Container Features](https://containers.dev/implementors/features/)
-that extend the official [`anthropics/devcontainer-features/claude-code`](https://github.com/anthropics/devcontainer-features/tree/main/src/claude-code)
-feature, plus a lightweight `nvm` feature.
+for Claude Code and friends, plus a lightweight `nvm` feature.
 
 Published to GHCR under the `sourecode/devcontainer-features` namespace.
 
@@ -10,14 +9,12 @@ Published to GHCR under the `sourecode/devcontainer-features` namespace.
 
 | Feature | OCI reference | Summary |
 |---|---|---|
-| `nvm` | `ghcr.io/sourecode/devcontainer-features/nvm:2` | Installs [nvm](https://github.com/nvm-sh/nvm) system-wide and optionally a Node version (defaults to LTS), with `node`/`npm`/`npx` symlinked into `/usr/local/bin`. No yarn. |
+| `claude-code` | `ghcr.io/sourecode/devcontainer-features/claude-code:1` | Installs the Claude Code CLI via the official native installer (no Node.js required). **Temporary** — will be retired once [anthropics/devcontainer-features#37](https://github.com/anthropics/devcontainer-features/pull/37) is merged. |
 | `rtk` | `ghcr.io/sourecode/devcontainer-features/rtk:1` | Installs [rtk](https://github.com/rtk-ai/rtk), an LLM token-reducing CLI proxy; auto-patches Claude Code if present. |
 | `context-mode` | `ghcr.io/sourecode/devcontainer-features/context-mode:1` | Installs the [`context-mode`](https://github.com/mksglu/context-mode) Claude Code plugin. |
+| `nvm` | `ghcr.io/sourecode/devcontainer-features/nvm:2` | Installs [nvm](https://github.com/nvm-sh/nvm) system-wide and optionally a Node version (defaults to LTS), with `node`/`npm`/`npx` symlinked into `/usr/local/bin`. No yarn. |
 
-`rtk` and `context-mode` depend on the Claude Code CLI, which they declare via
-`installsAfter: ghcr.io/anthropics/devcontainer-features/claude-code` so the
-runtime orders installations automatically when Anthropic's feature is also
-requested.
+`rtk` and `context-mode` declare `installsAfter` for both `ghcr.io/sourecode/devcontainer-features/claude-code` and `ghcr.io/anthropics/devcontainer-features/claude-code`, so the runtime orders them after whichever claude-code feature is present.
 
 ## Using the features
 
@@ -28,10 +25,7 @@ image you already use:
 {
   "image": "debian:trixie-slim",
   "features": {
-    "ghcr.io/sourecode/devcontainer-features/nvm:2": {
-      "node": "lts"
-    },
-    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {},
+    "ghcr.io/sourecode/devcontainer-features/claude-code:1": {},
     "ghcr.io/sourecode/devcontainer-features/rtk:1": {
       "autoPatchClaude": true
     },
@@ -46,12 +40,9 @@ user's `PATH`.
 
 ### Feature options
 
-#### `nvm`
+#### `claude-code`
 
-| Option | Type | Default | Purpose |
-|---|---|---|---|
-| `version` | string | `0.40.4` | nvm release tag to install (without the leading `v`). |
-| `node` | string | `lts` | Node version to install via nvm. `lts` uses `nvm install --lts`. `none` skips node install. Anything else is passed as-is to `nvm install`. |
+No options. Always installs the latest release.
 
 #### `rtk`
 
@@ -61,10 +52,16 @@ user's `PATH`.
 
 #### `context-mode`
 
-No options. Fails if the `claude` CLI is not on the user's PATH — add the
-official `ghcr.io/anthropics/devcontainer-features/claude-code` feature as
-well (the `installsAfter` hint then makes the CLI resolve the correct install
-order automatically).
+No options. Fails if the `claude` CLI is not on the user's PATH — add a
+claude-code feature as well (the `installsAfter` hint then makes the CLI
+resolve the correct install order automatically).
+
+#### `nvm`
+
+| Option | Type | Default | Purpose |
+|---|---|---|---|
+| `version` | string | `0.40.4` | nvm release tag to install (without the leading `v`). |
+| `node` | string | `lts` | Node version to install via nvm. `lts` uses `nvm install --lts`. `none` skips node install. Anything else is passed as-is to `nvm install`. |
 
 ### Persisting Claude Code state
 
@@ -81,13 +78,16 @@ bind mount, per-project credentials, or a shared named volume).
 .github/workflows/
   publish-features.yml            # publishes every src/<id>/ to GHCR
 src/
+  claude-code/
+    devcontainer-feature.json
+    install.sh
+  context-mode/
+    devcontainer-feature.json
+    install.sh
   nvm/
     devcontainer-feature.json
     install.sh
   rtk/
-    devcontainer-feature.json
-    install.sh
-  context-mode/
     devcontainer-feature.json
     install.sh
 docs/
@@ -112,8 +112,8 @@ that runs as `root` inside the container during the build.
   `ca-certificates`, etc. from `apt-get` if absent. Keep installs idempotent
   where reasonable.
 - Declare dependencies with `installsAfter` so the runtime orders features
-  correctly (e.g. `rtk` and `context-mode` both list
-  `ghcr.io/anthropics/devcontainer-features/claude-code`).
+  correctly (e.g. `rtk` and `context-mode` list both the `sourecode` and
+  `anthropics` claude-code feature IDs so either ordering target works).
 
 ### Testing a feature locally
 

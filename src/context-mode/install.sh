@@ -14,7 +14,7 @@ run_as_user() {
 }
 
 if ! run_as_user 'command -v claude >/dev/null 2>&1'; then
-  echo "context-mode feature: claude CLI not found. Install ghcr.io/anthropics/devcontainer-features/claude-code first." >&2
+  echo "context-mode feature: claude CLI not found. Install a claude-code feature (e.g. ghcr.io/sourecode/devcontainer-features/claude-code) first." >&2
   exit 1
 fi
 

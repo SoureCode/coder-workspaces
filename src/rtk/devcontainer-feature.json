@@ -1,17 +1,18 @@
 {
   "id": "rtk",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "name": "rtk",
   "description": "Installs rtk, an LLM token-reducing CLI proxy, and optionally wires its auto-rewrite hook into Claude Code.",
-  "documentationURL": "https://github.com/SoureCode/devcontainer-templates/tree/master/src/rtk",
+  "documentationURL": "https://github.com/SoureCode/devcontainer-features/tree/master/src/rtk",
   "options": {
     "autoPatchClaude": {
       "type": "boolean",
       "default": true,
-      "description": "Run `rtk init -g --auto-patch` to wire the auto-rewrite hook into Claude Code (requires the anthropics/claude-code feature)."
+      "description": "Run `rtk init -g --auto-patch` to wire the auto-rewrite hook into Claude Code (requires a claude-code feature)."
     }
   },
   "installsAfter": [
+    "ghcr.io/sourecode/devcontainer-features/claude-code",
     "ghcr.io/anthropics/devcontainer-features/claude-code"
   ]
 }

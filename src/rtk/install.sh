@@ -35,6 +35,6 @@ if [ "$AUTO_PATCH_CLAUDE" = "true" ]; then
   if run_as_user 'command -v claude >/dev/null 2>&1'; then
     run_as_user 'rtk init -g --auto-patch'
   else
-    echo "rtk feature: claude CLI not on PATH, skipping auto-patch. Install ghcr.io/anthropics/devcontainer-features/claude-code to enable it." >&2
+    echo "rtk feature: claude CLI not on PATH, skipping auto-patch. Install a claude-code feature (e.g. ghcr.io/sourecode/devcontainer-features/claude-code) to enable it." >&2
   fi
 fi

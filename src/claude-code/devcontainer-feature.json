@@ -1,0 +1,7 @@
+{
+  "id": "claude-code",
+  "version": "1.0.0",
+  "name": "claude-code",
+  "description": "TEMPORARY: Installs the latest Claude Code CLI via the official native installer (no Node.js required). Drop this feature in favor of `ghcr.io/anthropics/devcontainer-features/claude-code` once https://github.com/anthropics/devcontainer-features/pull/37 is merged.",
+  "documentationURL": "https://github.com/SoureCode/devcontainer-features/tree/master/src/claude-code"
+}
