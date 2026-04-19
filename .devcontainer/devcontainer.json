@@ -3,6 +3,8 @@
   "build": {
     "dockerfile": "Dockerfile"
   },
+  "remoteUser": "developer",
+  "containerUser": "developer",
   "features": {
     "ghcr.io/sourecode/devcontainer-features/claude-code:1": {},
     "ghcr.io/sourecode/devcontainer-features/rtk:1": {},
