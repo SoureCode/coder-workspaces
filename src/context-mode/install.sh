@@ -3,6 +3,12 @@
 # https://github.com/mksglu/context-mode
 set -e
 
+if ! command -v git >/dev/null 2>&1; then
+  apt-get update
+  apt-get install -y --no-install-recommends git ca-certificates
+  rm -rf /var/lib/apt/lists/*
+fi
+
 USER_NAME="${_REMOTE_USER:-${USERNAME:-root}}"
 
 run_as_user() {
@@ -18,4 +24,4 @@ if ! run_as_user 'command -v claude >/dev/null 2>&1'; then
   exit 1
 fi
 
-run_as_user 'claude plugin marketplace add https://github.com/mksglu/context-mode.git && claude plugin install context-mode@context-mode'
+run_as_user 'claude plugin marketplace add mksglu/context-mode && claude plugin install context-mode@context-mode'

@@ -1,6 +1,6 @@
 {
   "id": "context-mode",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "name": "context-mode (Claude Code plugin)",
   "description": "Installs the context-mode Claude Code plugin from the mksglu/context-mode marketplace. Requires a claude-code feature.",
   "documentationURL": "https://github.com/SoureCode/devcontainer-features/tree/master/src/context-mode",
