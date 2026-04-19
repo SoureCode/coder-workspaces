@@ -1,0 +1,11 @@
+{
+  "id": "context-mode",
+  "version": "1.0.0",
+  "name": "context-mode (Claude Code plugin)",
+  "description": "Installs the context-mode Claude Code plugin from the mksglu/context-mode marketplace. Requires the anthropics/claude-code feature.",
+  "documentationURL": "https://github.com/SoureCode/devcontainer-templates/tree/master/src/context-mode",
+  "options": {},
+  "installsAfter": [
+    "ghcr.io/anthropics/devcontainer-features/claude-code"
+  ]
+}

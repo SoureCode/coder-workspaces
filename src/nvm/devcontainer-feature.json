@@ -1,0 +1,19 @@
+{
+  "id": "nvm",
+  "version": "1.0.0",
+  "name": "nvm",
+  "description": "Installs nvm (Node Version Manager) into the remote user's home and optionally a Node version (defaults to LTS). No yarn.",
+  "documentationURL": "https://github.com/SoureCode/devcontainer-templates/tree/master/src/nvm",
+  "options": {
+    "version": {
+      "type": "string",
+      "default": "0.40.4",
+      "description": "nvm release tag to install (without the leading `v`)."
+    },
+    "node": {
+      "type": "string",
+      "default": "lts",
+      "description": "Node version to install via nvm. `lts` uses `nvm install --lts`. `none` skips node install. Anything else is passed as-is to `nvm install`."
+    }
+  }
+}

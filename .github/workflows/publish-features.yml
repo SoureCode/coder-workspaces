@@ -1,0 +1,33 @@
+name: Publish Features
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "src/**"
+      - ".github/workflows/publish-features.yml"
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish features
+        uses: devcontainers/action@v1
+        with:
+          publish-features: "true"
+          base-path-to-features: "./src"
+          oci-registry: "ghcr.io"
+          features-namespace: "sourecode/devcontainer-features"
