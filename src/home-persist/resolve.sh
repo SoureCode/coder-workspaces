@@ -8,6 +8,13 @@
 #
 # Manifest shape:
 #   { "source": "<label>", "paths": ["<rel-to-$HOME>", ...] }
+#
+# Path convention:
+#   - Trailing slash ("/") means the path is a directory. The target is
+#     pre-created so the symlink is never dangling — avoids `mkdir -p` on
+#     a dangling symlink failing with EEXIST in consumer scripts.
+#   - No trailing slash means the path is a file (or left dangling until
+#     a writer creates it).
 set -euo pipefail
 
 STATE="${HOME_PERSIST_STATE:-/mnt/home-persist}"
@@ -48,8 +55,12 @@ for mf in "${manifests[@]}"; do
     [ -z "$raw" ] && continue
     rel="${raw#\~/}"
     rel="${rel#/}"
+    is_dir=0
     case "$rel" in
-      *..*) log "rejecting path with .. in $mf: $raw"; continue ;;
+      */) is_dir=1; rel="${rel%/}" ;;
+    esac
+    case "$rel" in
+      *..*|"") log "rejecting invalid path in $mf: $raw"; continue ;;
     esac
 
     if [ -n "${owner[$rel]+x}" ]; then
@@ -65,6 +76,13 @@ for mf in "${manifests[@]}"; do
     if [ -e "$link" ] && [ ! -L "$link" ] && [ ! -e "$target" ]; then
       mv "$link" "$target"
     fi
+
+    # Pre-create directory targets so the symlink isn't dangling — consumer
+    # scripts running `mkdir -p ~/<path>` would otherwise hit EEXIST.
+    if [ "$is_dir" = 1 ] && [ ! -e "$target" ]; then
+      mkdir -p "$target"
+    fi
+
     ln -sfn "$target" "$link"
   done < <(jq -r '.paths[]?' "$mf")
 done

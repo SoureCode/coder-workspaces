@@ -31,6 +31,6 @@ mkdir -p /etc/devcontainer-persist.d
 cat > /etc/devcontainer-persist.d/claude-code.json <<'EOF'
 {
   "source": "claude-code",
-  "paths": [".claude", ".claude.json"]
+  "paths": [".claude/", ".claude.json"]
 }
 EOF

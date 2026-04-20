@@ -180,13 +180,14 @@ declare, list it on `home-persist`:
 
 ```jsonc
 "ghcr.io/sourecode/devcontainer-features/home-persist:1": {
-  "paths": ".gitconfig,.bash_history,.config/my-tool"
+  "paths": ".gitconfig,.bash_history,.config/my-tool/"
 }
 ```
 
-Paths are relative to `$HOME`. On first create, any existing content at
-those paths in the image gets moved into the volume; subsequent creates
-volume-win.
+Paths are relative to `$HOME`. Add a trailing `/` for directories (e.g.
+`.config/my-tool/`), omit it for files (e.g. `.gitconfig`). On first create,
+any existing content at those paths in the image gets moved into the volume;
+subsequent creates volume-win.
 
 ## Where env vars come from
 

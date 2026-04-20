@@ -37,16 +37,22 @@ cross-tool leakage between workspaces.
    ```json
    {
      "source": "claude-code",
-     "paths": [".claude", ".claude.json"]
+     "paths": [".claude/", ".claude.json"]
    }
    ```
+
+   **Trailing-slash convention**: a path ending in `/` is a directory; the
+   resolver pre-creates the target so the symlink is never dangling. Use a
+   slash for `.claude/` but not for `.claude.json` (a file). Without this,
+   the first create on an empty volume leaves `~/.claude` as a dangling
+   symlink, and any consumer doing `mkdir -p ~/.claude` fails with EEXIST.
 
    Users can also declare project-local paths via the `paths` option on the
    `home-persist` feature:
 
    ```jsonc
    "ghcr.io/sourecode/devcontainer-features/home-persist:1": {
-     "paths": ".claude,.claude.json,.gitconfig"
+     "paths": ".claude/,.claude.json,.gitconfig"
    }
    ```
 
@@ -105,7 +111,7 @@ Properties that fall out:
 
 | Source         | Paths                         | Why                                          |
 | -------------- | ----------------------------- | -------------------------------------------- |
-| `claude-code`  | `.claude`, `.claude.json`     | Login credentials, sessions, plugins         |
+| `claude-code`  | `.claude/`, `.claude.json`    | Login credentials, sessions, plugins         |
 | `user` (opt-in)| whatever you list             | Project-local additions                      |
 
 Anything not in the declared set is image-owned and resets on rebuild — git
@@ -132,10 +138,12 @@ mkdir -p /etc/devcontainer-persist.d
 cat > /etc/devcontainer-persist.d/my-feature.json <<'EOF'
 {
   "source": "my-feature",
-  "paths": [".my-feature", ".config/my-feature"]
+  "paths": [".my-feature/", ".config/my-feature/", ".my-feature.conf"]
 }
 EOF
 ```
+
+Trailing `/` for directories, no slash for files.
 
 No ordering required — `home-persist`'s `onCreateCommand` runs after all
 features install, so the manifest is always visible by resolve time. Listing
