@@ -2,7 +2,7 @@
   "id": "claude-code",
   "version": "2.0.0",
   "name": "claude-code",
-  "description": "Installs the latest Claude Code CLI via the official native installer, placing the binary in /usr/local/bin so it survives home-directory volume mounts.",
+  "description": "Installs the latest Claude Code CLI via the official native installer, placing the binary in /usr/local/bin. Declares ~/.claude and ~/.claude.json as persistence targets via the home-persist manifest, so credentials, sessions, and plugins survive rebuilds when home-persist is installed.",
   "documentationURL": "https://github.com/SoureCode/devcontainer-features/tree/master/src/claude-code",
   "dependsOn": {
     "ghcr.io/sourecode/devcontainer-features/nvm:2": {}

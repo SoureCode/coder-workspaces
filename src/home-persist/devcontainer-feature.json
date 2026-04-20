@@ -1,0 +1,15 @@
+{
+  "id": "home-persist",
+  "version": "1.0.0",
+  "name": "home-persist",
+  "description": "Symlinks selected paths under $HOME into a per-owner persistence volume mounted at /mnt/home-persist. Features and users declare paths via JSON manifests in /etc/devcontainer-persist.d/, and an onCreateCommand materializes the symlinks on every create. Requires the consumer to bind-mount a persistent source to /mnt/home-persist in devcontainer.json.",
+  "documentationURL": "https://github.com/SoureCode/devcontainer-features/tree/master/src/home-persist",
+  "options": {
+    "paths": {
+      "type": "string",
+      "default": "",
+      "description": "Comma-separated list of paths under $HOME to persist (e.g. '.claude,.claude.json,.gitconfig'). Written to /etc/devcontainer-persist.d/user.json at build time. Leave empty if you only want features to contribute paths."
+    }
+  },
+  "onCreateCommand": "/usr/local/bin/home-persist-resolve"
+}

@@ -2,11 +2,11 @@
 # context-mode Claude Code plugin installer.
 # https://github.com/mksglu/context-mode
 #
-# `claude plugin install` writes to ~/.claude/plugins, which lives on the
-# volume-mounted home. Running it at build time only works for the very
-# first devcontainer create (during volume seeding) and is invisible on
-# every subsequent run. Defer the install to postCreateCommand so it runs
-# against the real mounted home every time.
+# `claude plugin install` writes to ~/.claude/plugins. When home-persist is
+# used, ~/.claude is a symlink into /mnt/home-persist and the symlink is
+# created at onCreateCommand time — which is after install.sh runs. Defer
+# the plugin install to postCreateCommand so it writes through the symlink
+# into the persistent volume on every create.
 set -e
 
 if ! command -v git >/dev/null 2>&1; then
@@ -19,8 +19,9 @@ mkdir -p /usr/local/share/context-mode
 cat >/usr/local/share/context-mode/post-create.sh <<'EOF'
 #!/usr/bin/env bash
 # Written by the context-mode devcontainer feature at build time.
-# Runs as the remote user via postCreateCommand so the plugin lands in
-# the mounted ~/.claude, not the image.
+# Runs as the remote user via postCreateCommand, after home-persist has
+# symlinked ~/.claude into the persistence volume, so the plugin lands
+# there rather than in the image.
 set -e
 
 if ! command -v claude >/dev/null 2>&1; then

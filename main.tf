@@ -105,13 +105,14 @@ resource "coder_agent" "main" {
     ssh-keyscan -t ed25519,rsa,ecdsa github.com gitlab.com >> ~/.ssh/known_hosts 2>/dev/null
     sort -u ~/.ssh/known_hosts -o ~/.ssh/known_hosts
 
-    # /mnt/devhome is the per-owner devcontainer home volume (see docker_volume.devhome).
-    # devcontainer.json bind-mounts it into the inner container at /home/$DEVCONTAINER_USERNAME,
-    # so every workspace for this owner shares one persistent home. Chown once per start
-    # so the inner user (UID $DEVCONTAINER_USER_UID) can write it. mkdir is redundant when
-    # docker already mounted the volume but keeps this idempotent if the mount path moves.
-    sudo mkdir -p /mnt/devhome
-    sudo chown "$DEVCONTAINER_USER_UID:$DEVCONTAINER_USER_GID" /mnt/devhome
+    # /mnt/home-persist is the per-owner persistence volume (see docker_volume.home_persist).
+    # devcontainer.json bind-mounts it into the inner container at the same path,
+    # where the home-persist feature symlinks declared $HOME paths (e.g. ~/.claude,
+    # ~/.claude.json) into it. Chown once per start so the inner user (UID
+    # $DEVCONTAINER_USER_UID) can write it. mkdir is redundant when docker already
+    # mounted the volume but keeps this idempotent if the mount path moves.
+    sudo mkdir -p /mnt/home-persist
+    sudo chown "$DEVCONTAINER_USER_UID:$DEVCONTAINER_USER_GID" /mnt/home-persist
   EOT
   shutdown_script = ""
   dir            = data.coder_parameter.directory.value
@@ -362,16 +363,14 @@ resource "docker_volume" "docker_data" {
   }
 }
 
-# Per-owner devcontainer home. Lives at the HOST level (outer dockerd), not inside
+# Per-owner persistence volume. Lives at the HOST level (outer dockerd), not inside
 # any workspace's inner dockerd, so every workspace this owner starts sees the same
-# home contents — shell history, git config, ~/.claude credentials, tool caches,
-# everything. Survives workspace deletion and `rebuild_no_cache` (which only touches
-# inner dockerd state). Bind-mounted into the devcontainer via devcontainer.json:
-#   "mounts": ["source=/mnt/devhome,target=/home/${DEVCONTAINER_USERNAME},type=bind"]
-# First-ever attach is empty: rely on an onCreateCommand in devcontainer.json to
-# seed from /etc/skel when $HOME has no entries.
-resource "docker_volume" "devhome" {
-  name = "coder-${data.coder_workspace_owner.me.name}-devhome"
+# persisted state (Claude credentials/sessions, anything else declared via the
+# home-persist feature's manifest). Survives workspace deletion and `rebuild_no_cache`.
+# Bind-mounted into the devcontainer via devcontainer.json at /mnt/home-persist;
+# the home-persist feature's onCreateCommand symlinks declared $HOME paths into it.
+resource "docker_volume" "home_persist" {
+  name = "coder-${data.coder_workspace_owner.me.name}-home-persist"
   lifecycle {
     ignore_changes = all
   }
@@ -453,11 +452,12 @@ resource "docker_container" "workspace" {
     read_only      = false
   }
 
-  # Per-owner devcontainer home. Bind-mounted through into the inner devcontainer
-  # via devcontainer.json so it follows the owner across every workspace they open.
+  # Per-owner persistence volume. Bind-mounted through into the inner devcontainer
+  # via devcontainer.json (at the same path) where the home-persist feature symlinks
+  # declared $HOME paths into it. Follows the owner across every workspace they open.
   volumes {
-    container_path = "/mnt/devhome"
-    volume_name    = docker_volume.devhome.name
+    container_path = "/mnt/home-persist"
+    volume_name    = docker_volume.home_persist.name
     read_only      = false
   }
 

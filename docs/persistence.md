@@ -1,38 +1,69 @@
 # Persisting state across devcontainer rebuilds
 
-Our convention: a single per-owner home volume, bind-mounted through the
-outer Coder workspace into every devcontainer the owner opens. Everything
-under `$HOME` persists automatically — bash history, git config, SSH keys,
-tool caches, Claude Code state, sccache cache, pipx installs, anything —
-and it persists *across workspaces*, not just across rebuilds of one
-workspace.
+Our convention: a single per-owner volume bind-mounted at `/mnt/home-persist`,
+plus the `home-persist` feature that symlinks **only declared paths** under
+`$HOME` into that volume. Every feature or project lists the paths it needs
+persisted; a shared resolver wires them up on every create. Everything
+outside the declared set lives in the image and resets on rebuild — same as
+any other container.
 
-## The mount
+Compared to a whole-home mount: narrower blast radius, no first-run skeleton
+seeding, no drift between the image's `/etc/skel` and the live `$HOME`, no
+cross-tool leakage between workspaces.
 
-In every `.devcontainer/devcontainer.json`:
+## The three moving parts
 
-```jsonc
-{
-  "mounts": [
-    "source=/mnt/devhome,target=/home/${localEnv:DEVCONTAINER_USERNAME:dev},type=bind"
-  ],
-  "onCreateCommand": "test -z \"$(ls -A $HOME 2>/dev/null)\" && cp -rT /etc/skel $HOME || true"
-}
-```
+1. **The volume + bind mount.** In `.devcontainer/devcontainer.json`:
 
-- `/mnt/devhome` is a stable path inside the outer Coder workspace where
-  the per-owner home volume is mounted (see Topology below).
-- `DEVCONTAINER_USERNAME` is the in-container user (from
-  `coder_agent.main.env`; default `dev`).
-- `onCreateCommand` seeds the home from `/etc/skel` on first-ever attach.
-  Bind mounts don't auto-seed from the image the way named volumes do, so
-  the command copies skeleton dotfiles on the first workspace per owner
-  and no-ops on every subsequent create.
-- Running outside Coder, change the mount `source` to a local path or a
-  named volume — the rest of the devcontainer stays the same.
+   ```jsonc
+   {
+     "mounts": [
+       "source=/mnt/home-persist,target=/mnt/home-persist,type=bind"
+     ],
+     "features": {
+       "ghcr.io/sourecode/devcontainer-features/home-persist:1": {}
+     }
+   }
+   ```
 
-One volume per Coder user. Open three different project devcontainers,
-open them from three different workspaces — they all see the same home.
+   Source `/mnt/home-persist` is where the Coder template exposes the
+   per-owner docker volume (see Topology). Running outside Coder, change the
+   source to a local path or a named volume — the target stays the same.
+
+2. **The manifest.** Features drop a JSON file into
+   `/etc/devcontainer-persist.d/<name>.json` at build time. Example from
+   `claude-code`:
+
+   ```json
+   {
+     "source": "claude-code",
+     "paths": [".claude", ".claude.json"]
+   }
+   ```
+
+   Users can also declare project-local paths via the `paths` option on the
+   `home-persist` feature:
+
+   ```jsonc
+   "ghcr.io/sourecode/devcontainer-features/home-persist:1": {
+     "paths": ".claude,.claude.json,.gitconfig"
+   }
+   ```
+
+   That writes `user.json` into the same directory.
+
+3. **The resolver.** `home-persist`'s `onCreateCommand` runs
+   `/usr/local/bin/home-persist-resolve` on every create. For each declared
+   path:
+   - If `/mnt/home-persist/<path>` exists → symlink `$HOME/<path>` → it
+     (volume wins).
+   - Else if `$HOME/<path>` exists (real content from the image) → move it
+     into the volume, then symlink (first-run seed for that path).
+   - Else → create a dangling symlink; the tool populates it on first write,
+     and the file lives in the volume transparently.
+
+   Idempotent. Collisions between two manifests for the same path are
+   logged and skipped.
 
 ## Topology
 
@@ -40,122 +71,96 @@ open them from three different workspaces — they all see the same home.
 ┌───────────────────────────────────────────────────────────────────┐
 │ host dockerd                                                      │
 │                                                                   │
-│   docker volume: coder-<owner>-devhome   ◄──── one per owner      │
+│   docker volume: coder-<owner>-home-persist   ◄──── one per owner      │
 │     │                                                             │
-│     ├─► outer workspace A at /mnt/devhome                         │
-│     │     └─► inner devcontainer (bind) /home/<dev-user>          │
+│     ├─► outer workspace A at /mnt/home-persist                    │
+│     │     └─► inner devcontainer (bind) /mnt/home-persist         │
+│     │            └─► symlinks from $HOME into it                  │
 │     │                                                             │
-│     ├─► outer workspace B at /mnt/devhome                         │
-│     │     └─► inner devcontainer (bind) /home/<dev-user>          │
+│     ├─► outer workspace B at /mnt/home-persist                    │
+│     │     └─► inner devcontainer (bind) /mnt/home-persist         │
 │     │                                                             │
-│     └─► outer workspace C at /mnt/devhome                         │
-│           └─► inner devcontainer (bind) /home/<dev-user>          │
+│     └─► outer workspace C at /mnt/home-persist                    │
+│           └─► inner devcontainer (bind) /mnt/home-persist         │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
 The volume lives in the **host** dockerd, above any individual workspace.
-It's defined in the Coder template as `docker_volume "devhome"`, scoped
-by `coder_workspace_owner.me.name`, and bind-mounted into the outer
-workspace container at `/mnt/devhome`. Each inner devcontainer then
-bind-mounts that path as its own `/home/<user>`, so the filesystem every
-workspace's IDE and shell see is literally the same volume.
+It's defined in the Coder template as `docker_volume "home_persist"`, scoped by
+`coder_workspace_owner.me.name`, and bind-mounted into the outer workspace
+container at `/mnt/home-persist`. Each inner devcontainer bind-mounts that
+same path at the same path, and the resolver creates symlinks from `$HOME`
+into it.
 
-Properties that fall out of this layout:
+Properties that fall out:
 
 - Survives workspace deletion. Blowing away a workspace doesn't touch
-  `coder-<owner>-devhome`.
+  `coder-<owner>-home-persist`.
 - Survives `rebuild_no_cache`. That parameter only drops inner dockerd
   state (`vsc-*` images + BuildKit cache) — not the host-level volume.
-- Nothing in `docs/migration-guide.md`'s volume name changes when you
-  rename a workspace. Identity is tied to the owner, not the workspace.
+- Scoped to the owner. Identity is tied to the owner, not the workspace —
+  rename a workspace, same volume.
 
-## What persists automatically
+## What's declared today
 
-Any path under `$HOME`. A non-exhaustive list that matters for us:
+| Source         | Paths                         | Why                                          |
+| -------------- | ----------------------------- | -------------------------------------------- |
+| `claude-code`  | `.claude`, `.claude.json`     | Login credentials, sessions, plugins         |
+| `user` (opt-in)| whatever you list             | Project-local additions                      |
 
-| Path                          | Contents                                           |
-| ----------------------------- | -------------------------------------------------- |
-| `~/.bash_history`             | Shell history                                      |
-| `~/.gitconfig`                | Git identity + signing config                      |
-| `~/.ssh/`                     | SSH keys (we auto-populate via Coder sub-agent)    |
-| `~/.claude/`                  | Claude Code credentials, sessions, plugin data     |
-| `~/.cache/sccache/`           | sccache compilation cache                          |
-| `~/.cargo/`, `~/.rustup/`     | Rust toolchain + crate cache (if installed)        |
-| `~/.local/`                   | pipx installs, user-local binaries                 |
-| `~/.config/`                  | Per-app config                                     |
+Anything not in the declared set is image-owned and resets on rebuild — git
+config, SSH keys, bash history, caches. Two common patterns for those:
 
-Nothing extra to configure. `SCCACHE_DIR` and `CLAUDE_CONFIG_DIR` default
-to paths under `$HOME`, so the env vars the old pattern used to override
-them are unnecessary and should be removed.
+- **Git identity / SSH keys** — injected per-workspace by Coder via
+  `coder_script` and `coder_env` in `main.tf`. Regenerated every start, no
+  persistence needed.
+- **Dotfiles / aliases** — use Coder's dotfiles repo support or bake into
+  the devcontainer's Dockerfile / `/etc/skel`.
 
-## What doesn't persist
+If a specific tool needs persistence, add it to the manifest — either
+ship a feature that declares it, or list the path under the `home-persist`
+feature's `paths` option.
 
-- Anything **outside** `$HOME` — `/usr/local/...`, `/opt/...`, etc. These
-  come from the image, the Dockerfile, or feature installs. Rebuild the
-  image to change them. This is also why our features install to
-  `/usr/local/bin` rather than `~/.local/bin`: feature-installed binaries
-  need to live outside the home volume.
-- The workspace folder itself (usually `/workspaces/<repo>`). That's the
-  git clone under the outer workspace's `/home/coder`, persisted by the
-  per-workspace `docker_volume.home_volume`. Your working tree survives
-  restarts of *its* workspace, but is scoped to that workspace.
+## Writing a feature that needs HOME persistence
 
-## Seeding on first create
-
-Bind mounts don't auto-seed from the image. The first time the per-owner
-volume is attached, it's empty, and the devcontainer's image-side
-`/home/<user>` (skeleton dotfiles, defaults from `/etc/skel`) is *not*
-copied into it automatically.
-
-The `onCreateCommand` above handles seeding explicitly:
+Any feature can declare paths by writing a manifest at build time. The
+resolver finds it and handles the rest. Minimal pattern:
 
 ```bash
-test -z "$(ls -A $HOME 2>/dev/null)" && cp -rT /etc/skel $HOME || true
+# in your feature's install.sh
+mkdir -p /etc/devcontainer-persist.d
+cat > /etc/devcontainer-persist.d/my-feature.json <<'EOF'
+{
+  "source": "my-feature",
+  "paths": [".my-feature", ".config/my-feature"]
+}
+EOF
 ```
 
-- On the first-ever create for an owner, `$HOME` is empty → copy
-  `/etc/skel` in.
-- On every subsequent create (any workspace, any rebuild), `$HOME` has
-  content → no-op.
+No ordering required — `home-persist`'s `onCreateCommand` runs after all
+features install, so the manifest is always visible by resolve time. Listing
+the same path in two manifests is harmless: the second is logged and
+skipped.
 
-After the first create the volume wins on its own. Subsequent rebuilds
-of the image will **not** propagate changes to the image's `$HOME` into
-the existing volume.
+## Resetting state
 
-Consequence: don't put long-lived shell config in `~/.bashrc` via the
-Dockerfile — it'd be stuck at whatever got seeded on the first create.
-Use `/etc/bash.bashrc` instead (system-wide, sourced by non-login
-interactive bashes on Debian/Ubuntu, image-owned, always authoritative).
+If persistence gets into a bad state, nuke the volume from the host:
+
+```bash
+docker volume rm coder-<owner>-home-persist
+```
+
+Next create sees an empty `/mnt/home-persist`; the resolver's first-run
+seeding kicks in per path, or leaves dangling symlinks for paths whose
+content didn't exist in the image either. You'll need to re-login to Claude
+Code and anything else that held creds.
 
 ## Cross-workspace side effects
 
-One home for every workspace means:
+One volume per owner means:
 
-- Pros: universal `~/.gitconfig`, `~/.ssh/*`, one Claude Code login, one
-  shared bash history, shared sccache / `~/.cargo` caches across all
-  projects the owner opens.
-- Cons: tools that write env-specific state to `$HOME` (some pyenv / nvm
-  layouts, project-specific `~/.config/*` files) will leak between
-  projects. For most dotfile-level state this is exactly what you want.
-  If a specific tool misbehaves, override its config dir via `containerEnv`
-  to point at a project-scoped path under the repo's working tree.
-- Running two workspaces simultaneously means two processes writing to
-  the same home — the same situation as running two terminals on your
-  laptop. Tools that support concurrent writers (bash history with
-  `histappend`, content-addressed caches, atomic-rename lockfiles) cope
-  fine. Tools that don't (single-writer state files) behave as they would
-  locally.
-
-## Resetting a home
-
-If the shared home gets into a bad state, nuke the volume from the host:
-
-```bash
-docker volume rm coder-<owner-username>-devhome
-```
-
-Next devcontainer start sees an empty `/mnt/devhome`, the `onCreateCommand`
-re-seeds it from `/etc/skel`, and you're back to a clean home. You'll need
-to re-login to Claude Code, re-populate `~/.ssh` (the Coder sub-agent does
-this automatically via `coder_script "git_ssh_signing"`), and re-set any
-interactive state.
+- One Claude Code login reused across every workspace the owner opens.
+- Two workspaces running simultaneously means two processes writing to the
+  same files in the volume. For credential files and config this is fine;
+  for anything with single-writer semantics, same caveats as any shared
+  home. Add the path only if you actually want it shared.

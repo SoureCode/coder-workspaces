@@ -1,16 +1,17 @@
 # Devcontainer Migration Guide
 
-Guide to migrate an existing
-`.devcontainer/` setup onto the SoureCode conventions: persistent per-user
-home, dynamic user construct, and toolchain installed via features instead
-of inline Dockerfile install steps.
+Guide to migrate an existing `.devcontainer/` setup onto the SoureCode
+conventions: manifest-driven `$HOME` persistence via the `home-persist`
+feature, dynamic user construct, and toolchain installed via features
+instead of inline Dockerfile install steps.
 
 ## Goals of the migration
 
-1. Every devcontainer for the same Coder user shares one named volume mounted
-   on the user's home directory. Bash history, git config, shell dotfiles,
-   tool caches, Claude config, etc. persist across devcontainer rebuilds
-   **and** across different projects.
+1. Per-user state that must survive rebuilds (Claude login, anything else
+   explicitly declared) lives in a single per-owner volume at
+   `/mnt/home-persist`. The `home-persist` feature symlinks those paths
+   from `$HOME` into the volume on every create. Everything else stays
+   image-owned and resets on rebuild.
 2. The container user / UID / GID is driven by `DEVCONTAINER_*` env vars so
    the same devcontainer works inside Coder (where the outer template sets
    these) and outside (sensible defaults).
@@ -26,8 +27,8 @@ An existing devcontainer that:
   image ships.
 - Has a Dockerfile with long inline installs for cmake / LLVM / sccache /
   Claude Code / RTK.
-- Uses ephemeral volumes or `${devcontainerId}`-scoped volumes (state dies
-  on rebuild).
+- Uses ephemeral volumes, `${devcontainerId}`-scoped volumes, or a
+  whole-`$HOME` bind mount.
 - Hard-codes paths like `/root/.claude`, `/root/.cache/sccache`.
 
 ## Output state (what you're producing)
@@ -48,10 +49,10 @@ An existing devcontainer that:
   "remoteUser": "${localEnv:DEVCONTAINER_USERNAME:dev}",
   "containerUser": "${localEnv:DEVCONTAINER_USERNAME:dev}",
   "mounts": [
-    "source=/mnt/devhome,target=/home/${localEnv:DEVCONTAINER_USERNAME:dev},type=bind"
+    "source=/mnt/home-persist,target=/mnt/home-persist,type=bind"
   ],
-  "onCreateCommand": "test -z \"$(ls -A $HOME 2>/dev/null)\" && cp -rT /etc/skel $HOME || true",
   "features": {
+    "ghcr.io/sourecode/devcontainer-features/home-persist:1": {},
     // pick from the feature reference below
   },
   "customizations": {
@@ -63,19 +64,19 @@ An existing devcontainer that:
 Rules:
 
 - `name` — keep the project's existing name.
-- Mount **source** is **always** `/mnt/devhome`, mount **type** is
-  **always** `bind`. That path is the per-owner home volume mounted into
-  every outer Coder workspace (see `main.tf`'s `docker_volume "devhome"`).
-  Do **not** introduce per-project volume names — the whole point is that
-  every project shares one home per owner.
-- `onCreateCommand` is required. Bind mounts don't auto-seed from the
-  image, so this line copies `/etc/skel` into `$HOME` on the first-ever
-  create and no-ops on every subsequent create. See
-  [`persistence.md`](persistence.md#seeding-on-first-create).
+- Mount **source** and **target** are both `/mnt/home-persist`, mount
+  **type** is **bind**. That path is the per-owner persistence volume
+  mounted into every outer Coder workspace (see `main.tf`'s
+  `docker_volume "home_persist"`). Do **not** introduce per-project volume
+  names — the whole point is that every project shares one volume per
+  owner.
+- The `home-persist` feature is required whenever any feature declares a
+  persistence manifest (e.g. `claude-code` declares `.claude` and
+  `.claude.json`). Without it, the symlinks are never created and state
+  resets on rebuild.
 - `remoteUser` and `containerUser` both use `${localEnv:DEVCONTAINER_USERNAME:dev}`.
-- Do **not** set `CLAUDE_CONFIG_DIR` or `SCCACHE_DIR` in `containerEnv` —
-  their defaults (`~/.claude`, `~/.cache/sccache`) already land inside the
-  persistent home volume.
+- Do **not** set `CLAUDE_CONFIG_DIR` in `containerEnv` — `home-persist`
+  already routes `~/.claude` through the volume.
 - `customizations` — preserve whatever the project had (JetBrains backend,
   VS Code settings/extensions, etc.).
 
@@ -119,16 +120,15 @@ Rules:
 - **Remove** any inline installs that are now handled by features
   (see next section). Also remove:
   - Manual `.bashrc` history-persistence hacks tied to `/commandhistory` or
-    `/root/.bash_history` — home is on the volume now, bash history
-    persists naturally at `~/.bash_history`.
+    `/root/.bash_history` — `$HOME` is image-owned, bash history resets on
+    rebuild unless you add `.bash_history` to a `home-persist` manifest.
   - Hard-coded `CC=clang-22` / `CXX=clang++-22` — the `llvm` feature sets
     these via `containerEnv`.
-  - Hard-coded `SCCACHE_DIR` — default already works.
-- If the project sets shell-level config (`HISTSIZE`, `PATH` additions, etc.)
-  put it in `/etc/bash.bashrc` (system-wide, sourced by non-login interactive
-  bashes on Debian/Ubuntu) **not** `~/.bashrc`. The home dir is a volume —
-  `~/.bashrc` only gets seeded on first-create and diverges from the image
-  on rebuilds.
+  - Hard-coded `CLAUDE_CONFIG_DIR` / `SCCACHE_DIR` — `home-persist` routes
+    the paths the declared features need.
+- Shell-level config (`HISTSIZE`, `PATH` additions, aliases) goes in the
+  Dockerfile (via `/etc/bash.bashrc` or similar) since `$HOME` is now
+  image-owned and doesn't drift.
 
 ## Available features
 
@@ -136,11 +136,12 @@ Reference: `ghcr.io/sourecode/devcontainer-features/<id>:<major-version>`
 
 | Feature | Purpose | Notable options |
 |---|---|---|
+| `home-persist` | Manifest-driven `$HOME` persistence into `/mnt/home-persist` | `paths` (comma-separated) |
 | `cmake` | CMake from Kitware GitHub releases, distro-agnostic | `version` (default `latest`) |
 | `llvm` | Clang/LLVM via `apt.llvm.org`. Sets `CC`/`CXX` in containerEnv. | `version` (default `22`), `all` (default `true`) |
 | `sccache` | Mozilla sccache from GitHub releases | `version` (default `latest`) |
 | `nvm` | NVM + optional Node install | `version`, `node` (default `lts`) |
-| `claude-code` | Anthropic Claude Code CLI | — |
+| `claude-code` | Anthropic Claude Code CLI. Declares `.claude` + `.claude.json` in the home-persist manifest. | — |
 | `rtk` | RTK CLI | — |
 | `context-mode` | Context-mode integration | — |
 
@@ -167,9 +168,25 @@ Typical `features` block for a C++ project:
   "ghcr.io/sourecode/devcontainer-features/nvm:2": {},
   "ghcr.io/sourecode/devcontainer-features/claude-code:2": {},
   "ghcr.io/sourecode/devcontainer-features/rtk:2": {},
-  "ghcr.io/sourecode/devcontainer-features/context-mode:2": {}
+  "ghcr.io/sourecode/devcontainer-features/context-mode:2": {},
+  "ghcr.io/sourecode/devcontainer-features/home-persist:1": {}
 }
 ```
+
+### Adding project-local paths to persistence
+
+If the project has its own `$HOME` state to persist beyond what features
+declare, list it on `home-persist`:
+
+```jsonc
+"ghcr.io/sourecode/devcontainer-features/home-persist:1": {
+  "paths": ".gitconfig,.bash_history,.config/my-tool"
+}
+```
+
+Paths are relative to `$HOME`. On first create, any existing content at
+those paths in the image gets moved into the volume; subsequent creates
+volume-win.
 
 ## Where env vars come from
 
@@ -180,44 +197,44 @@ Typical `features` block for a C++ project:
   at devcontainer startup.
 - Running the devcontainer locally on a laptop (no Coder): the `:fallback`
   defaults in each `${localEnv:NAME:fallback}` kick in. User ends up as
-  `dev` at 1000:1000, volume is `devhome-shared`.
+  `dev` at 1000:1000. For persistence to work, you'll need `/mnt/home-persist`
+  to exist on the host — either create a directory or replace the mount
+  source with a local path / named volume.
 
-## Persistent home caveats
+## Persistence caveats
 
 One volume per Coder *owner*, bind-mounted through every outer workspace
 they open. Shared across every devcontainer they open, in every workspace
-they open. Same bash history, same `~/.gitconfig`, same `~/.claude`,
-everywhere. Side effects to understand:
+they open — but only for paths explicitly declared in a manifest.
 
-- Bind mounts don't auto-seed. The `onCreateCommand` in the template
-  handles it: empty `$HOME` → copy `/etc/skel`, populated `$HOME` → no-op.
-- Put long-lived shell config in `/etc/bash.bashrc` (image-side) so it
-  stays authoritative. `~/.bashrc` lives on the volume and is only
-  populated once on the first-ever create; rebuilding the image later
-  does **not** update it.
-- Tools that store env-specific state in `$HOME` (some pyenv/nvm layouts,
-  `.cache/` bloat) can collide across projects. Usually fine for dotfiles
-  and coarse caches; tune per-project if something misbehaves.
-- Running two workspaces simultaneously shares the same home (same
-  situation as running two terminals on your laptop). Tools that tolerate
-  concurrent writers cope fine; tools that don't behave as they would
-  locally.
+- `$HOME` itself is image-owned. `~/.bashrc`, `/etc/skel` contents, anything
+  not in a manifest resets on rebuild. That's a feature — the image is the
+  source of truth for shell config.
+- Two workspaces running simultaneously share the same volume for declared
+  paths (same as any shared home). Tools that tolerate concurrent writers
+  cope fine; tools that don't behave as they would locally. Only declare
+  paths where cross-workspace sharing is what you actually want.
+- Resetting state: `docker volume rm coder-<owner>-home-persist`. Next
+  create starts clean for declared paths; re-login to Claude Code etc.
+
+See [`persistence.md`](persistence.md) for the full model.
 
 ## Checklist for the migrating agent
 
 1. Edit `.devcontainer/devcontainer.json` to match the template above.
-   Preserve `name` and `customizations` from the original.
+   Preserve `name` and `customizations` from the original. Add
+   `home-persist:1` to `features`.
 2. Edit `.devcontainer/Dockerfile`:
    - Add `ARG USERNAME / USER_UID / USER_GID`.
    - Fold user creation into the apt `RUN`.
    - Remove inline installs that are covered by features.
-   - Move any `.bashrc` shell config to `/etc/bash.bashrc`.
+   - Drop any `CLAUDE_CONFIG_DIR` / `SCCACHE_DIR` overrides.
    - End with `USER ${USERNAME}`.
 3. Remove obsolete files: standalone `bashrc`-patching scripts,
-   `/commandhistory` directory hacks, hard-coded `CLAUDE_CONFIG_DIR` /
-   `SCCACHE_DIR` env vars.
+   `/commandhistory` directory hacks, hard-coded config-dir env vars.
 4. Build-test the devcontainer locally:
    `devcontainer up --workspace-folder .` → should succeed, drop into the
    non-root user's shell, and have `cmake`, `clang`, `sccache`, `claude`,
-   `rtk` on `$PATH`.
+   `rtk` on `$PATH`. `ls -la ~/.claude ~/.claude.json` should show symlinks
+   into `/mnt/home-persist`.
 5. Commit.

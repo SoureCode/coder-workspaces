@@ -14,12 +14,13 @@ that hosts the devcontainers these features get installed into — see
 
 | Feature | OCI reference | Summary |
 |---|---|---|
-| `claude-code` | `ghcr.io/sourecode/devcontainer-features/claude-code:2` | Installs the Claude Code CLI via the official native installer into `/usr/local/bin`, so the binary survives home-directory volume mounts. Requires Node.js — automatically pulls in the `nvm` feature via `dependsOn`. |
-| `rtk` | `ghcr.io/sourecode/devcontainer-features/rtk:2` | Installs [rtk](https://github.com/rtk-ai/rtk), an LLM token-reducing CLI proxy, into `/usr/local/bin`. Auto-patches Claude Code via `postCreateCommand` so the hook is written against the mounted home, not the image. |
-| `context-mode` | `ghcr.io/sourecode/devcontainer-features/context-mode:2` | Installs the [`context-mode`](https://github.com/mksglu/context-mode) Claude Code plugin via `postCreateCommand`, so the plugin lands in the mounted `~/.claude` rather than the image. |
+| `claude-code` | `ghcr.io/sourecode/devcontainer-features/claude-code:2` | Installs the Claude Code CLI via the official native installer into `/usr/local/bin`. Declares `~/.claude` and `~/.claude.json` as persistence targets via the `home-persist` manifest. Requires Node.js — automatically pulls in the `nvm` feature via `dependsOn`. |
+| `rtk` | `ghcr.io/sourecode/devcontainer-features/rtk:2` | Installs [rtk](https://github.com/rtk-ai/rtk), an LLM token-reducing CLI proxy, into `/usr/local/bin`. Auto-patches Claude Code via `postCreateCommand` so the hook is written against the live `~/.claude`, not the image. |
+| `context-mode` | `ghcr.io/sourecode/devcontainer-features/context-mode:2` | Installs the [`context-mode`](https://github.com/mksglu/context-mode) Claude Code plugin via `postCreateCommand`, so the plugin lands in `~/.claude/plugins` (which `home-persist` symlinks into the persistence volume when installed). |
+| `home-persist` | `ghcr.io/sourecode/devcontainer-features/home-persist:1` | Symlinks declared `$HOME` paths into a per-owner persistence volume at `/mnt/home-persist`. Features and users contribute paths via JSON manifests in `/etc/devcontainer-persist.d/`; an `onCreateCommand` resolver materializes the symlinks on every create. |
 | `nvm` | `ghcr.io/sourecode/devcontainer-features/nvm:2` | Installs [nvm](https://github.com/nvm-sh/nvm) system-wide at `/usr/local/share/nvm` and optionally a Node version (defaults to LTS), with `node`/`npm`/`npx` symlinked into `/usr/local/bin`. No yarn. |
 
-All binaries land in `/usr/local/bin` (or `/usr/local/share/...`) rather than the user's home, so they survive the shared home-volume pattern described in [`docs/persistence.md`](docs/persistence.md). `rtk` and `context-mode` declare `installsAfter` for both `ghcr.io/sourecode/devcontainer-features/claude-code` and `ghcr.io/anthropics/devcontainer-features/claude-code`, so the runtime orders them after whichever claude-code feature is present.
+All binaries land in `/usr/local/bin` (or `/usr/local/share/...`) rather than the user's home, so they stay image-owned. Per-user state that needs to survive rebuilds is declared explicitly via the `home-persist` manifest — see [`docs/persistence.md`](docs/persistence.md). `rtk` and `context-mode` declare `installsAfter` for both `ghcr.io/sourecode/devcontainer-features/claude-code` and `ghcr.io/anthropics/devcontainer-features/claude-code`, so the runtime orders them after whichever claude-code feature is present.
 
 ## Using the features
 
@@ -72,12 +73,24 @@ claude-code feature as well. `installsAfter` handles ordering for either
 | `version` | string | `0.40.4` | nvm release tag to install (without the leading `v`). |
 | `node` | string | `lts` | Node version to install via nvm. `lts` uses `nvm install --lts`. `none` skips node install. Anything else is passed as-is to `nvm install`. |
 
+#### `home-persist`
+
+| Option | Type | Default | Purpose |
+|---|---|---|---|
+| `paths` | string | `""` | Comma-separated list of `$HOME`-relative paths to persist (e.g. `.claude,.claude.json,.gitconfig`). Written to `/etc/devcontainer-persist.d/user.json` at build time. Leave empty if you only want features to contribute paths. |
+
+Requires a bind mount from a persistent source to `/mnt/home-persist` in
+`devcontainer.json`. See [`docs/persistence.md`](docs/persistence.md) for
+the full model.
+
 ### Persisting Claude Code state
 
 Claude login (`~/.claude/.credentials.json`) and chat history (`projects/`,
-`sessions/`, `session-env/`) live in the user's home. Persist them by mounting
-`$HOME` as a named volume — see [`docs/persistence.md`](docs/persistence.md)
-for the shared-home pattern we use across every devcontainer.
+`sessions/`, `session-env/`) live in `~/.claude`. The `claude-code` feature
+declares `.claude` and `.claude.json` in its manifest, so installing
+`home-persist` alongside it — plus bind-mounting a persistent source to
+`/mnt/home-persist` — is enough to carry state across rebuilds. See
+[`docs/persistence.md`](docs/persistence.md) for the full model.
 
 ## Coder workspace template
 
@@ -268,6 +281,10 @@ src/
   context-mode/
     devcontainer-feature.json
     install.sh
+  home-persist/
+    devcontainer-feature.json
+    install.sh
+    resolve.sh
   nvm/
     devcontainer-feature.json
     install.sh
@@ -289,19 +306,32 @@ that runs as `root` inside the container during the build.
 
 - `install.sh` starts as `root`. **Prefer system-wide install paths**
   (`/usr/local/bin`, `/usr/local/share/<id>`, `/etc/profile.d`) over anything
-  under the remote user's home. The shared-home volume pattern
-  ([`docs/persistence.md`](docs/persistence.md)) means writes into
-  `/home/<user>` at build time only appear on first-create and then get
-  shadowed by the named volume on every subsequent run.
-- If a tool's upstream installer insists on writing to `$HOME`, run it under
-  a scratch `HOME` (`mktemp -d`) and relocate the resulting binary to
-  `/usr/local/bin` (see `src/claude-code/install.sh`). If the tool supports
-  an override env var (e.g. `RTK_INSTALL_DIR`), pass it directly.
+  under the remote user's home. Paths under `$HOME` that the feature needs
+  to persist across rebuilds should be declared via a `home-persist`
+  manifest (see below), not written at build time — the symlinks don't
+  exist yet during `install.sh`.
+- If a tool's upstream installer insists on writing to `$HOME`, relocate
+  the resulting binary to `/usr/local/bin` (see `src/claude-code/install.sh`).
+  If the tool supports an override env var (e.g. `RTK_INSTALL_DIR`), pass
+  it directly.
 - For anything that genuinely needs to live in the user's real home
   (credentials, plugin state, shell-rc tweaks), emit a script to
   `/usr/local/share/<id>/post-create.sh` and wire it via `postCreateCommand`
-  in `devcontainer-feature.json` so it runs against the mounted home, not
-  the image.
+  in `devcontainer-feature.json` so it runs after the `home-persist`
+  resolver has symlinked the target paths into place.
+- If your feature writes persistent state under `$HOME`, declare those
+  paths by dropping a JSON manifest in `install.sh`:
+
+  ```bash
+  mkdir -p /etc/devcontainer-persist.d
+  cat > /etc/devcontainer-persist.d/<your-feature>.json <<'EOF'
+  { "source": "<your-feature>", "paths": [".your-tool"] }
+  EOF
+  ```
+
+  The `home-persist` feature's `onCreateCommand` picks it up and symlinks
+  each path into the persistence volume. See
+  [`docs/persistence.md`](docs/persistence.md).
 - Feature options are exposed as **uppercased** environment variables (e.g.
   option `autoPatchClaude` → `$AUTOPATCHCLAUDE`). Always apply a default:
   `"${FOO:-true}"`.

@@ -11,13 +11,13 @@
   "remoteUser": "${localEnv:DEVCONTAINER_USERNAME:dev}",
   "containerUser": "${localEnv:DEVCONTAINER_USERNAME:dev}",
   "mounts": [
-    "source=/mnt/devhome,target=/home/${localEnv:DEVCONTAINER_USERNAME:dev},type=bind"
+    "source=/mnt/home-persist,target=/mnt/home-persist,type=bind"
   ],
-  "onCreateCommand": "test -z \"$(ls -A $HOME 2>/dev/null)\" && cp -rT /etc/skel $HOME || true",
   "features": {
     "ghcr.io/sourecode/devcontainer-features/nvm:2": {},
     "ghcr.io/sourecode/devcontainer-features/claude-code:2": {},
     "ghcr.io/sourecode/devcontainer-features/rtk:2": {},
-    "ghcr.io/sourecode/devcontainer-features/context-mode:2": {}
+    "ghcr.io/sourecode/devcontainer-features/context-mode:2": {},
+    "ghcr.io/sourecode/devcontainer-features/home-persist:1": {}
   }
 }

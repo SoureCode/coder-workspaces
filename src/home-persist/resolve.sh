@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# home-persist resolver.
+#
+# Reads JSON manifests from /etc/devcontainer-persist.d/*.json and, for each
+# listed path, symlinks $HOME/<path> → /mnt/home-persist/<path>. First-run
+# seeding moves existing $HOME content into the volume; on every subsequent
+# run the volume wins. Idempotent.
+#
+# Manifest shape:
+#   { "source": "<label>", "paths": ["<rel-to-$HOME>", ...] }
+set -euo pipefail
+
+STATE="${HOME_PERSIST_STATE:-/mnt/home-persist}"
+MANIFEST_DIR="${HOME_PERSIST_MANIFEST_DIR:-/etc/devcontainer-persist.d}"
+
+log() { echo "home-persist: $*" >&2; }
+
+if [ ! -d "$STATE" ]; then
+  log "state dir $STATE missing; skipping (did you bind-mount it in devcontainer.json?)"
+  exit 0
+fi
+if [ ! -w "$STATE" ]; then
+  log "state dir $STATE not writable by $(id -un); skipping"
+  exit 0
+fi
+if [ ! -d "$MANIFEST_DIR" ]; then
+  exit 0
+fi
+
+shopt -s nullglob
+manifests=("$MANIFEST_DIR"/*.json)
+shopt -u nullglob
+
+if [ ${#manifests[@]} -eq 0 ]; then
+  exit 0
+fi
+
+declare -A owner=()
+
+for mf in "${manifests[@]}"; do
+  if ! jq -e . "$mf" >/dev/null 2>&1; then
+    log "skipping unreadable manifest $mf"
+    continue
+  fi
+  source=$(jq -r '.source // "unknown"' "$mf")
+
+  while IFS= read -r raw; do
+    [ -z "$raw" ] && continue
+    rel="${raw#\~/}"
+    rel="${rel#/}"
+    case "$rel" in
+      *..*) log "rejecting path with .. in $mf: $raw"; continue ;;
+    esac
+
+    if [ -n "${owner[$rel]+x}" ]; then
+      log "collision on $rel: ${owner[$rel]} vs $source ($mf)"
+      continue
+    fi
+    owner[$rel]="$source"
+
+    link="$HOME/$rel"
+    target="$STATE/$rel"
+    mkdir -p "$(dirname "$target")" "$(dirname "$link")"
+
+    if [ -e "$link" ] && [ ! -L "$link" ] && [ ! -e "$target" ]; then
+      mv "$link" "$target"
+    fi
+    ln -sfn "$target" "$link"
+  done < <(jq -r '.paths[]?' "$mf")
+done
