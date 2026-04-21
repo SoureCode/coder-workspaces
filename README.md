@@ -17,6 +17,7 @@ that hosts the devcontainers these features get installed into — see
 | `claude-code` | `ghcr.io/sourecode/devcontainer-features/claude-code:2` | Installs the Claude Code CLI via the official native installer into `/usr/local/bin`. Declares `~/.claude` and `~/.claude.json` as persistence targets via the `home-persist` manifest. Requires Node.js — automatically pulls in the `nvm` feature via `dependsOn`. |
 | `rtk` | `ghcr.io/sourecode/devcontainer-features/rtk:2` | Installs [rtk](https://github.com/rtk-ai/rtk), an LLM token-reducing CLI proxy, into `/usr/local/bin`. Auto-patches Claude Code via `postCreateCommand` so the hook is written against the live `~/.claude`, not the image. |
 | `context-mode` | `ghcr.io/sourecode/devcontainer-features/context-mode:2` | Installs the [`context-mode`](https://github.com/mksglu/context-mode) Claude Code plugin via `postCreateCommand`, so the plugin lands in `~/.claude/plugins` (which `home-persist` symlinks into the persistence volume when installed). |
+| `web-shell` | `ghcr.io/sourecode/devcontainer-features/web-shell:1` | Installs [web-shell](https://github.com/SoureCode/web-shell) (persistent browser terminal backed by `tmux`) from the GitHub release tarball and registers it as a systemd unit + Coder workspace app. Requires Node.js — automatically pulls in the `nvm` feature via `dependsOn`. |
 | `home-persist` | `ghcr.io/sourecode/devcontainer-features/home-persist:1` | Symlinks declared `$HOME` paths into a per-owner persistence volume at `/mnt/home-persist`. Features and users contribute paths via JSON manifests in `/etc/devcontainer-persist.d/`; an `onCreateCommand` resolver materializes the symlinks on every create. |
 | `nvm` | `ghcr.io/sourecode/devcontainer-features/nvm:2` | Installs [nvm](https://github.com/nvm-sh/nvm) system-wide at `/usr/local/share/nvm` and optionally a Node version (defaults to LTS), with `node`/`npm`/`npx` symlinked into `/usr/local/bin`. No yarn. |
 
@@ -72,6 +73,20 @@ claude-code feature as well. `installsAfter` handles ordering for either
 |---|---|---|---|
 | `version` | string | `0.40.4` | nvm release tag to install (without the leading `v`). |
 | `node` | string | `lts` | Node version to install via nvm. `lts` uses `nvm install --lts`. `none` skips node install. Anything else is passed as-is to `nvm install`. |
+
+#### `web-shell`
+
+| Option | Type | Default | Purpose |
+|---|---|---|---|
+| `version` | string | `latest` | web-shell release to install. `latest` resolves the newest tag via the GitHub API; otherwise `X.Y.Z` or `vX.Y.Z`. |
+| `port` | string | `4000` | TCP port web-shell binds on. Baked into the systemd unit as `$PORT`. |
+| `host` | string | `127.0.0.1` | Bind address. Baked into the systemd unit as `$HOST`. Use `0.0.0.0` to listen on all interfaces. |
+| `authToken` | string | `""` | Bearer token for incoming connections. Baked into the systemd unit as `$AUTH_TOKEN`. Empty disables auth. |
+
+Declares `dependsOn` for `ghcr.io/sourecode/devcontainer-features/nvm:2`, so
+adding `web-shell` automatically pulls in `nvm` (and Node.js). The Coder app
+registration (`customizations.coder.apps`) makes a **web-shell** button appear
+on the workspace page when running under Coder + sysbox.
 
 #### `home-persist`
 
@@ -291,6 +306,10 @@ src/
   rtk/
     devcontainer-feature.json
     install.sh
+  web-shell/
+    devcontainer-feature.json
+    install.sh
+    README.md
 docs/
   migration-guide.md
   persistence.md
