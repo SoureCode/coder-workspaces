@@ -1,8 +1,8 @@
 {
   "id": "web-shell",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "web-shell",
-  "description": "Installs web-shell (persistent browser terminal backed by tmux) from the GitHub release tarball into the global Node install, and registers a systemd unit so the service starts automatically on container boot. Also publishes the service as a Coder workspace app.",
+  "description": "Installs web-shell (persistent browser terminal backed by dtach) from the GitHub release tarball into the global Node install, and registers a systemd unit so the service starts automatically on container boot. Also publishes the service as a Coder workspace app.",
   "documentationURL": "https://github.com/SoureCode/devcontainer-features/tree/master/src/web-shell",
   "options": {
     "version": {

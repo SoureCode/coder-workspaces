@@ -23,10 +23,10 @@ if [ -z "$${WANTED_VERSION}" ]; then
   exit 1
 fi
 
-# Install prereqs: tmux is required at runtime; build-essential + python3 cover
+# Install prereqs: dtach is required at runtime; build-essential + python3 cover
 # node-pty's native build step when a prebuilt binding isn't available.
 need=()
-for pkg in tmux build-essential python3; do
+for pkg in dtach build-essential python3; do
   dpkg -s "$pkg" >/dev/null 2>&1 || need+=("$pkg")
 done
 if [ $${#need[@]} -gt 0 ]; then

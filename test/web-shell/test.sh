@@ -6,7 +6,7 @@ set -e
 # shellcheck disable=SC1091
 source dev-container-features-test-lib
 
-check "tmux installed"                which tmux
+check "dtach installed"               which dtach
 check "web-shell binary in /usr/local/bin" test -x /usr/local/bin/web-shell
 check "systemd unit present"          test -f /etc/systemd/system/web-shell.service
 check "unit contains PORT env"        grep -q '^Environment=PORT=' /etc/systemd/system/web-shell.service

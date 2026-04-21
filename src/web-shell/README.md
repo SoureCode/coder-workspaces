@@ -1,13 +1,13 @@
 # web-shell devcontainer feature
 
 Installs [web-shell](https://github.com/SoureCode/web-shell) — a persistent
-browser terminal backed by `tmux` — inside a devcontainer and registers it
+browser terminal backed by `dtach` — inside a devcontainer and registers it
 as a Coder workspace app.
 
-`web-shell` is a Node.js + xterm.js service. Every session is a `tmux` session
-on the server, so shells survive Node restarts. This feature:
+`web-shell` is a Node.js + xterm.js service. Every session is attached to a
+`dtach` socket on the server, so shells survive Node restarts. This feature:
 
-- Installs OS deps (`tmux`, `build-essential`, `python3`, `curl`, `jq`).
+- Installs OS deps (`dtach`, `build-essential`, `python3`, `curl`, `jq`).
 - Downloads the release tarball from `SoureCode/web-shell` and `npm install -g`s
   it against the Node toolchain provided by the
   [`nvm`](../nvm) feature (`dependsOn`).

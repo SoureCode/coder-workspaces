@@ -19,10 +19,10 @@ WS_PORT="${PORT:-4000}"
 WS_HOST="${HOST:-127.0.0.1}"
 WS_AUTH_TOKEN="${AUTHTOKEN:-}"
 
-# 1. OS deps: tmux for the terminal multiplexer, build-essential + python3
+# 1. OS deps: dtach as the detachable session backend, build-essential + python3
 # because node-pty compiles native bindings, plus curl/jq for release lookup.
 APT_PKGS=""
-for pkg in tmux build-essential python3 ca-certificates curl jq; do
+for pkg in dtach build-essential python3 ca-certificates curl jq; do
   if ! dpkg -s "$pkg" >/dev/null 2>&1; then
     APT_PKGS="$APT_PKGS $pkg"
   fi
