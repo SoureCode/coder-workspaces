@@ -6,7 +6,7 @@ RESET='\033[0m'
 function run_web_shell() {
   echo "👷 Running web-shell in the background..."
   echo "Check logs at ${LOG_PATH}!"
-  HOST="${HOST}" PORT="${PORT}" AUTH_TOKEN="${AUTH_TOKEN}" \
+  HOST="${HOST}" PORT="${PORT}" AUTH_TOKEN="${AUTH_TOKEN}" WEB_SHELL_CWD="${CWD}" \
     web-shell > "${LOG_PATH}" 2>&1 &
 }
 

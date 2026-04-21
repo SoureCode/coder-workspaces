@@ -206,6 +206,14 @@ module "code-server" {
   order    = 1
 }
 
+module "web-shell" {
+  count    = data.coder_workspace.me.start_count
+  source   = "github.com/SoureCode/devcontainer-features//terraform/web-shell"
+  agent_id = coder_devcontainer.repo[0].subagent_id
+  cwd      = data.coder_parameter.directory.value
+  order    = 2
+}
+
 # See https://registry.coder.com/modules/coder/jetbrains
 module "jetbrains" {
   count      = data.coder_workspace.me.start_count

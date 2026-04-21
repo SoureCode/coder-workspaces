@@ -39,6 +39,12 @@ variable "install_version" {
   default     = ""
 }
 
+variable "cwd" {
+  type        = string
+  description = "Working directory for new web-shell sessions (sets $WEB_SHELL_CWD). Empty uses web-shell's default."
+  default     = ""
+}
+
 variable "log_path" {
   type        = string
   description = "The path to log web-shell to."
@@ -110,6 +116,7 @@ resource "coder_script" "web-shell" {
     HOST : var.host,
     PORT : var.port,
     AUTH_TOKEN : var.auth_token,
+    CWD : var.cwd,
     LOG_PATH : var.log_path,
   })
   run_on_start = true
