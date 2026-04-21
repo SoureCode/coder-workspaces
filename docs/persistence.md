@@ -11,6 +11,14 @@ Compared to a whole-home mount: narrower blast radius, no first-run skeleton
 seeding, no drift between the image's `/etc/skel` and the live `$HOME`, no
 cross-tool leakage between workspaces.
 
+> **Not persistence, but related — `/mnt/shared`.** A single deployment-wide
+> docker volume (`docker_volume.shared` in `main.tf`) is mounted at
+> `/mnt/shared` on every workspace and auto-injected into every devcontainer
+> by the `devcontainer` CLI shim in `Dockerfile.workspace`. No
+> `devcontainer.json` edits needed. Sticky-bit 1777 (like `/tmp`) — anyone
+> can drop files, only the owner can delete them. Use it as a cross-user
+> drop box, not for per-user state.
+
 ## The three moving parts
 
 1. **The volume + bind mount.** In `.devcontainer/devcontainer.json`:

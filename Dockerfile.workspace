@@ -57,7 +57,22 @@ RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
 
 # Pre-install @devcontainers/cli globally so the Coder module doesn't need
 # to (which fails for non-root users installing to /usr/lib/node_modules).
-RUN npm install -g @devcontainers/cli
+RUN npm install -g @devcontainers/cli && \
+    mv /usr/bin/devcontainer /usr/bin/devcontainer.real
+
+# Shim the devcontainer CLI to auto-inject deployment-wide mounts on every
+# `up` / `build`, so individual projects don't have to declare them in their
+# devcontainer.json. Currently injects /mnt/shared (see docker_volume.shared
+# in main.tf) — a cross-owner drop box mounted on every workspace container.
+RUN cat > /usr/bin/devcontainer <<'EOF' && chmod +x /usr/bin/devcontainer
+#!/bin/bash
+set -eu
+extra=()
+if [[ "${1:-}" == "up" || "${1:-}" == "build" ]]; then
+    extra+=(--mount "type=bind,source=/mnt/shared,target=/mnt/shared")
+fi
+exec /usr/bin/devcontainer.real "$@" "${extra[@]}"
+EOF
 
 # Pre-populate system known_hosts for common git forges so SSH clones don't
 # race the agent's ssh-keyscan startup step.

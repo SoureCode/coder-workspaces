@@ -113,6 +113,13 @@ resource "coder_agent" "main" {
     # mounted the volume but keeps this idempotent if the mount path moves.
     sudo mkdir -p /mnt/home-persist
     sudo chown "$DEVCONTAINER_USER_UID:$DEVCONTAINER_USER_GID" /mnt/home-persist
+
+    # /mnt/shared is the deployment-wide shared volume (see docker_volume.shared).
+    # Single docker volume attached to every workspace, every owner — a drop box
+    # for moving files between users. Sticky-bit 1777 (like /tmp) so anyone can
+    # write but only the file's owner can delete it.
+    sudo mkdir -p /mnt/shared
+    sudo chmod 1777 /mnt/shared
   EOT
   shutdown_script = ""
   dir            = data.coder_parameter.directory.value
@@ -392,6 +399,17 @@ resource "docker_volume" "home_persist" {
   }
 }
 
+# Deployment-wide shared volume. A single docker volume — fixed name, no per-owner
+# or per-workspace suffix — attached to every workspace container. Acts as a drop
+# box for moving files between users. Mounted at /mnt/shared with sticky-bit 1777
+# (see startup_script) so anyone can write but only the file's owner can delete it.
+resource "docker_volume" "shared" {
+  name = "coder-shared"
+  lifecycle {
+    ignore_changes = all
+  }
+}
+
 resource "docker_volume" "home_volume" {
   name = "coder-${data.coder_workspace.me.id}-home"
   # Protect the volume from being deleted due to changes in attributes.
@@ -474,6 +492,13 @@ resource "docker_container" "workspace" {
   volumes {
     container_path = "/var/lib/docker"
     volume_name    = docker_volume.docker_data.name
+    read_only      = false
+  }
+
+  # Deployment-wide shared drop box. Same volume on every workspace, every owner.
+  volumes {
+    container_path = "/mnt/shared"
+    volume_name    = docker_volume.shared.name
     read_only      = false
   }
 
