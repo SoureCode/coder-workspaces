@@ -16,7 +16,7 @@
   ],
   "features": {
     "ghcr.io/sourecode/devcontainer-features/nvm:2": {},
-    "ghcr.io/sourecode/devcontainer-features/claude-code:2": {},
+    "ghcr.io/sourecode/devcontainer-features/claude-code:3": {},
     "ghcr.io/sourecode/devcontainer-features/rtk:2": {},
     "ghcr.io/sourecode/devcontainer-features/context-mode:2": {},
     "ghcr.io/sourecode/devcontainer-features/home-persist:1": {}
