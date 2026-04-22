@@ -23,41 +23,6 @@ if [ -z "$${WANTED_VERSION}" ]; then
   exit 1
 fi
 
-# Install prereqs: dtach is required at runtime; build-essential + python3 cover
-# node-pty's native build step when a prebuilt binding isn't available.
-need=()
-for pkg in dtach build-essential python3; do
-  dpkg -s "$pkg" >/dev/null 2>&1 || need+=("$pkg")
-done
-if [ $${#need[@]} -gt 0 ]; then
-  printf "$${BOLD}Installing prereqs: $${need[*]}$${RESET}\n"
-  # Retry on transient apt failures: dpkg-lock contention when other startup
-  # scripts run apt in parallel, network flakes on apt-get update, mirror
-  # hiccups. Exit codes were previously unchecked, so failures silently left
-  # dtach missing and web-shell broke on first session.
-  installed=0
-  for attempt in 1 2 3; do
-    if sudo apt-get update && \
-       sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$${need[@]}"; then
-      installed=1
-      break
-    fi
-    echo "apt-get attempt $${attempt} failed; retrying..." >&2
-    sleep $$((attempt * 2))
-  done
-  if [ "$${installed}" -ne 1 ]; then
-    echo "Failed to install prereqs after 3 attempts: $${need[*]}" >&2
-    exit 1
-  fi
-fi
-
-# dtach is load-bearing — web-shell's session survival across disconnects
-# depends on it. Fail loud rather than starting web-shell without it.
-if ! command -v dtach >/dev/null 2>&1; then
-  echo "dtach missing after install step; aborting." >&2
-  exit 1
-fi
-
 # Install or upgrade web-shell if the installed version doesn't match.
 INSTALLED_VERSION=""
 if command -v web-shell >/dev/null 2>&1; then
@@ -68,7 +33,7 @@ fi
 if [ "$${INSTALLED_VERSION}" != "$${WANTED_VERSION}" ]; then
   printf "$${BOLD}Installing web-shell $${WANTED_VERSION}$${RESET}\n"
   TARBALL="https://github.com/SoureCode/web-shell/releases/download/v$${WANTED_VERSION}/web-shell-$${WANTED_VERSION}.tgz"
-  if ! sudo -E env "PATH=$PATH" npm install -g "$${TARBALL}"; then
+  if ! npm install -g "$${TARBALL}"; then
     echo "Failed to install web-shell $${WANTED_VERSION}"
     exit 1
   fi
