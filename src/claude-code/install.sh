@@ -18,7 +18,15 @@ if [ ! -x "$USER_HOME/.local/bin/claude" ]; then
   exit 1
 fi
 
+# The upstream installer runs as root with HOME=$USER_HOME and writes into
+# $HOME/.claude, $HOME/.local AND $HOME/.cache (its own state dir plus
+# node-gyp from any native-module compile). Chown all three so nothing is
+# left root-owned on the remote user's home. .cache is guarded because it
+# may not exist on minimal installs.
 chown -R "$USER_NAME:$USER_GROUP" "$USER_HOME/.claude" "$USER_HOME/.local"
+if [ -d "$USER_HOME/.cache" ]; then
+  chown -R "$USER_NAME:$USER_GROUP" "$USER_HOME/.cache"
+fi
 
 # Declare the HOME paths Claude Code needs persisted. The home-persist feature
 # reads every /etc/devcontainer-persist.d/*.json at create time and symlinks
