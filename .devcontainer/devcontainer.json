@@ -3,6 +3,7 @@
   "build": {
     "dockerfile": "Dockerfile",
     "args": {
+      "BASE_IMAGE": "${localEnv:DEVCONTAINER_BASE_IMAGE:ghcr.io/sourecode/devcontainer-base:latest}",
       "USERNAME": "${localEnv:DEVCONTAINER_USERNAME:dev}",
       "USER_UID": "${localEnv:DEVCONTAINER_USER_UID:1000}",
       "USER_GID": "${localEnv:DEVCONTAINER_USER_GID:1000}"
