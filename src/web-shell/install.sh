@@ -19,6 +19,20 @@ WS_PORT="${PORT:-4000}"
 WS_HOST="${HOST:-127.0.0.1}"
 WS_AUTH_TOKEN="${AUTHTOKEN:-}"
 
+# Resolve the container's remote user. The devcontainer spec injects
+# _REMOTE_USER at feature-install time; USERNAME is the older fallback some
+# bases still set. Default to root only when neither is present. Without this,
+# the systemd unit would run ExecStart as root and web-shell would create
+# $HOME/.cache owned by root on the remote user's home.
+USER_NAME="${_REMOTE_USER:-${USERNAME:-root}}"
+if [ "$USER_NAME" = "root" ]; then
+  USER_GROUP="root"
+  USER_HOME="/root"
+else
+  USER_GROUP="$(id -gn "$USER_NAME")"
+  USER_HOME="$(getent passwd "$USER_NAME" | cut -d: -f6)"
+fi
+
 # 1. OS deps: dtach as the detachable session backend, build-essential + python3
 # because node-pty compiles native bindings, plus curl/jq for release lookup.
 APT_PKGS=""
@@ -91,6 +105,10 @@ After=network.target
 
 [Service]
 Type=simple
+User=${USER_NAME}
+Group=${USER_GROUP}
+WorkingDirectory=${USER_HOME}
+Environment=HOME=${USER_HOME}
 Environment=HOST=${WS_HOST}
 Environment=PORT=${WS_PORT}
 Environment=AUTH_TOKEN=${WS_AUTH_TOKEN}
@@ -102,6 +120,12 @@ RestartSec=1
 WantedBy=multi-user.target
 EOF
 chmod 0644 /etc/systemd/system/web-shell.service
+
+# Repair state from earlier feature versions (<1.2.0) that ran the service as
+# root and left $HOME/.cache root-owned. Idempotent; cheap on clean installs.
+if [ "$USER_NAME" != "root" ] && [ -d "$USER_HOME/.cache" ]; then
+  chown -R "$USER_NAME:$USER_GROUP" "$USER_HOME/.cache" || true
+fi
 
 INIT_COMM="$(ps -p 1 -o comm= 2>/dev/null | tr -d '[:space:]' || true)"
 if [ "$INIT_COMM" = "systemd" ]; then
