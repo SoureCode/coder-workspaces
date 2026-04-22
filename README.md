@@ -14,7 +14,7 @@ that hosts the devcontainers these features get installed into — see
 
 | Feature | OCI reference | Summary |
 |---|---|---|
-| `claude-code` | `ghcr.io/sourecode/devcontainer-features/claude-code:2` | Installs the Claude Code CLI via the official native installer into `/usr/local/bin`. Declares `~/.claude` and `~/.claude.json` as persistence targets via the `home-persist` manifest. Requires Node.js — automatically pulls in the `nvm` feature via `dependsOn`. |
+| `claude-code` | `ghcr.io/sourecode/devcontainer-features/claude-code:3` | Installs the Claude Code CLI via the official native installer into `/usr/local/bin`. Declares `~/.claude` and `~/.claude.json` as persistence targets via the `home-persist` manifest. Requires Node.js — automatically pulls in the `nvm` feature via `dependsOn`. |
 | `rtk` | `ghcr.io/sourecode/devcontainer-features/rtk:2` | Installs [rtk](https://github.com/rtk-ai/rtk), an LLM token-reducing CLI proxy, into `/usr/local/bin`. Auto-patches Claude Code via `postCreateCommand` so the hook is written against the live `~/.claude`, not the image. |
 | `context-mode` | `ghcr.io/sourecode/devcontainer-features/context-mode:2` | Installs the [`context-mode`](https://github.com/mksglu/context-mode) Claude Code plugin via `postCreateCommand`, so the plugin lands in `~/.claude/plugins` (which `home-persist` symlinks into the persistence volume when installed). |
 | `web-shell` | `ghcr.io/sourecode/devcontainer-features/web-shell:1` | Installs [web-shell](https://github.com/SoureCode/web-shell) (persistent browser terminal backed by `dtach`) from the GitHub release tarball and registers it as a systemd unit + Coder workspace app. Requires Node.js — automatically pulls in the `nvm` feature via `dependsOn`. |
@@ -32,7 +32,7 @@ image you already use:
 {
   "image": "debian:trixie-slim",
   "features": {
-    "ghcr.io/sourecode/devcontainer-features/claude-code:2": {},
+    "ghcr.io/sourecode/devcontainer-features/claude-code:3": {},
     "ghcr.io/sourecode/devcontainer-features/rtk:2": {
       "autoPatchClaude": true
     },

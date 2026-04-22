@@ -166,7 +166,7 @@ Typical `features` block for a C++ project:
   "ghcr.io/sourecode/devcontainer-features/llvm:1": {},
   "ghcr.io/sourecode/devcontainer-features/sccache:1": {},
   "ghcr.io/sourecode/devcontainer-features/nvm:2": {},
-  "ghcr.io/sourecode/devcontainer-features/claude-code:2": {},
+  "ghcr.io/sourecode/devcontainer-features/claude-code:3": {},
   "ghcr.io/sourecode/devcontainer-features/rtk:2": {},
   "ghcr.io/sourecode/devcontainer-features/context-mode:2": {},
   "ghcr.io/sourecode/devcontainer-features/home-persist:1": {}
