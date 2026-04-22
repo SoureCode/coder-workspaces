@@ -1,6 +1,6 @@
 {
   "id": "llvm",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "llvm",
   "description": "Installs LLVM / Clang on Debian / Ubuntu via the official apt.llvm.org repository. Major-version binaries (clang, clang++, lld, lldb, clangd, clang-format, clang-tidy, etc.) are symlinked into /usr/local/bin without the version suffix.",
   "documentationURL": "https://github.com/SoureCode/devcontainer-features/tree/master/src/llvm",

@@ -6,10 +6,19 @@ set -e
 LLVM_VERSION="${VERSION:-22}"
 LLVM_ALL="${ALL:-true}"
 
-apt-get update
-apt-get install -y --no-install-recommends \
-  ca-certificates curl gnupg lsb-release software-properties-common wget
-rm -rf /var/lib/apt/lists/*
+# llvm.sh writes the LLVM apt source in deb822 format on trixie/forky/sid, so
+# software-properties-common (gone from trixie) is no longer required. Older
+# Debian/Ubuntu suites still need add-apt-repository — install it on demand
+# when llvm.sh asks for it. Only install what's missing.
+NEED=()
+for pkg in ca-certificates curl gnupg lsb-release wget; do
+  dpkg -s "$pkg" >/dev/null 2>&1 || NEED+=("$pkg")
+done
+if [ "${#NEED[@]}" -gt 0 ]; then
+  apt-get update
+  apt-get install -y --no-install-recommends "${NEED[@]}"
+  rm -rf /var/lib/apt/lists/*
+fi
 
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
