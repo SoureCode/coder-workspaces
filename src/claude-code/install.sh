@@ -1,27 +1,24 @@
 #!/usr/bin/env bash
 # claude-code feature installer.
-#
-# Requires Node.js on PATH (provided by the nvm feature via `dependsOn`).
-# Installs the binary to /usr/local/bin so it lives in an image layer,
-# independent of the persistence volume, and declares the HOME paths that
-# need to survive rebuilds via the home-persist manifest.
 set -e
 
-if ! command -v curl >/dev/null 2>&1; then
-  apt-get update
-  apt-get install -y --no-install-recommends curl ca-certificates
-  rm -rf /var/lib/apt/lists/*
+USER_NAME="${_REMOTE_USER:-${USERNAME:-root}}"
+if [ "$USER_NAME" = "root" ]; then
+  USER_GROUP="root"
+else
+  USER_GROUP="$(id -gn "$USER_NAME")"
 fi
 
-curl -fsSL https://claude.ai/install.sh | bash
+USER_HOME="$(getent passwd "$USER_NAME" | cut -d: -f6)"
 
-SRC_BIN="$HOME/.local/bin/claude"
-if [ ! -x "$SRC_BIN" ]; then
-  echo "claude-code feature: expected $SRC_BIN after install, but it was not found." >&2
+HOME="$USER_HOME" curl -fsSL https://claude.ai/install.sh | HOME="$USER_HOME" bash
+
+if [ ! -x "$USER_HOME/.local/bin/claude" ]; then
+  echo "claude-code feature: expected $USER_HOME/.local/bin/claude after install, but it was not found." >&2
   exit 1
 fi
 
-install -m 0755 "$SRC_BIN" /usr/local/bin/claude
+chown -R "$USER_NAME:$USER_GROUP" "$USER_HOME/.claude" "$USER_HOME/.local"
 
 # Declare the HOME paths Claude Code needs persisted. The home-persist feature
 # reads every /etc/devcontainer-persist.d/*.json at create time and symlinks
