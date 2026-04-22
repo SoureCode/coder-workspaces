@@ -73,8 +73,19 @@ for mf in "${manifests[@]}"; do
     target="$STATE/$rel"
     mkdir -p "$(dirname "$target")" "$(dirname "$link")"
 
-    if [ -e "$link" ] && [ ! -L "$link" ] && [ ! -e "$target" ]; then
-      mv "$link" "$target"
+    if [ -e "$link" ] && [ ! -L "$link" ]; then
+      if [ ! -e "$target" ]; then
+        mv "$link" "$target"
+      elif [ -d "$link" ] && [ -d "$target" ]; then
+        # Both sides are directories and the volume is already populated. Merge
+        # home into the volume without clobbering (volume wins, per the stated
+        # model), then drop the now-redundant home dir so `ln -sfn` below
+        # replaces it with the symlink. Without this branch, `ln -sfn` against
+        # a real directory creates the link *inside* it — that's how we ended
+        # up with $HOME/.claude/.claude.
+        cp -an "$link"/. "$target"/
+        rm -rf "$link"
+      fi
     fi
 
     # Pre-create directory targets so the symlink isn't dangling — consumer
