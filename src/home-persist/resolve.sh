@@ -74,6 +74,21 @@ for mf in "${manifests[@]}"; do
     mkdir -p "$(dirname "$target")" "$(dirname "$link")"
 
     if [ -e "$link" ] && [ ! -L "$link" ]; then
+      # Auto-repair the <1.2.0 artifact: if $link is still a real directory
+      # and contains a dangling-style symlink named after rel's basename
+      # pointing at $target, that's the nested symlink the old code produced
+      # (e.g. $HOME/.claude/.claude → /mnt/home-persist/.claude). Drop it
+      # before the merge so it isn't copied into the volume as a self-loop.
+      stale="$link/$(basename "$rel")"
+      if [ -L "$stale" ]; then
+        stale_resolved="$(readlink -f "$stale" 2>/dev/null || true)"
+        target_resolved="$(readlink -f "$target" 2>/dev/null || true)"
+        if [ -n "$stale_resolved" ] && [ "$stale_resolved" = "$target_resolved" ]; then
+          log "repairing legacy nested symlink $stale"
+          rm -f "$stale"
+        fi
+      fi
+
       if [ ! -e "$target" ]; then
         mv "$link" "$target"
       elif [ -d "$link" ] && [ -d "$target" ]; then
