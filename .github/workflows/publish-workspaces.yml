@@ -18,6 +18,8 @@ jobs:
       packages: write
     outputs:
       short_sha: ${{ steps.sha.outputs.short }}
+      digest: ${{ steps.build.outputs.digest }}
+      image: ${{ steps.img.outputs.name }}
     steps:
       - uses: actions/checkout@v6
 
@@ -29,7 +31,6 @@ jobs:
         id: img
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/coder-workspace" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
@@ -49,11 +50,12 @@ jobs:
             type=sha,format=short,prefix=base-
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
           file: ./src/base/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -77,7 +79,6 @@ jobs:
         id: img
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/coder-workspace" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
@@ -101,11 +102,11 @@ jobs:
         with:
           context: .
           file: ./src/${{ matrix.stack }}/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            BASE_IMAGE=${{ steps.img.outputs.name }}:base-${{ needs.base.outputs.short_sha }}
+            BASE_IMAGE=${{ needs.base.outputs.image }}@${{ needs.base.outputs.digest }}
           cache-from: type=gha,scope=workspace-${{ matrix.stack }}
           cache-to: type=gha,mode=max,scope=workspace-${{ matrix.stack }}

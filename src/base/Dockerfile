@@ -78,19 +78,27 @@ USER root
 # env var the devcontainer CLI used at feature-install time.
 ENV _REMOTE_USER=${USERNAME}
 
-# System-wide installers run as root.
-RUN --mount=type=bind,source=scripts,target=/scripts \
-    for s in context-mode home-persist jetbrains; do \
-      bash "/scripts/$s/install.sh"; \
-    done
+# Per-tool bind mounts so a change in one installer only busts its own layer.
+# A single mount of scripts/ would hash the whole dir — bumping web-shell
+# would rebuild every tool.
+RUN --mount=type=bind,source=scripts/context-mode,target=/scripts/context-mode \
+    bash /scripts/context-mode/install.sh
+RUN --mount=type=bind,source=scripts/home-persist,target=/scripts/home-persist \
+    bash /scripts/home-persist/install.sh
+RUN --mount=type=bind,source=scripts/jetbrains,target=/scripts/jetbrains \
+    bash /scripts/jetbrains/install.sh
 
 # Per-user installers run as the remote user directly — upstream installers
 # write into $HOME with correct ownership; no root+chown dance.
 USER ${USERNAME}
-RUN --mount=type=bind,source=scripts,target=/scripts \
-    for s in nvm claude-code rtk web-shell; do \
-      bash "/scripts/$s/install.sh"; \
-    done
+RUN --mount=type=bind,source=scripts/nvm,target=/scripts/nvm \
+    bash /scripts/nvm/install.sh
+RUN --mount=type=bind,source=scripts/claude-code,target=/scripts/claude-code \
+    bash /scripts/claude-code/install.sh
+RUN --mount=type=bind,source=scripts/rtk,target=/scripts/rtk \
+    bash /scripts/rtk/install.sh
+RUN --mount=type=bind,source=scripts/web-shell,target=/scripts/web-shell \
+    bash /scripts/web-shell/install.sh
 USER root
 
 # Coder agent: systemd unit runs /etc/coder/agent-init.sh as the workspace
