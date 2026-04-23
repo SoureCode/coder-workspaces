@@ -6,6 +6,11 @@ FROM ${BASE_IMAGE}
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
 
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends --no-install-suggests \
+        ninja-build && \
+    rm -rf /var/lib/apt/lists/*
+
 # Per-tool bind mounts so a change in one installer only busts its own layer.
 RUN --mount=type=bind,source=scripts/llvm,target=/scripts/llvm \
     bash /scripts/llvm/install.sh
