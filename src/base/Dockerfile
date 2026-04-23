@@ -97,12 +97,12 @@ USER root
 # user after dockerd is up. The script itself is uploaded at container-create
 # time by the Terraform template (kreuzwerker/docker `upload` block).
 RUN mkdir -p /etc/coder
-COPY coder-agent.service /etc/systemd/system/coder-agent.service
+COPY src/base/coder-agent.service /etc/systemd/system/coder-agent.service
 RUN systemctl enable coder-agent.service
 
 # Entrypoint claims fresh-volume mountpoints for the workspace user before
 # systemd starts. See entrypoint.sh for rationale.
-COPY --chmod=0755 entrypoint.sh /usr/local/sbin/coder-entrypoint
+COPY --chmod=0755 src/base/entrypoint.sh /usr/local/sbin/coder-entrypoint
 ENV USERNAME=${USERNAME}
 
 ENTRYPOINT ["/usr/local/sbin/coder-entrypoint"]
