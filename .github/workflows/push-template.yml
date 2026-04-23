@@ -1,0 +1,80 @@
+name: Push Coder Template
+
+# Push a new template version to the Coder instance on:
+#   1. Master changes to main.tf or this workflow file (template-only edits
+#      that don't trigger an image rebuild).
+#   2. Successful completion of "Publish Workspace Images" — so the new
+#      image digest baked in by data.docker_registry_image gets a fresh
+#      template version pinned to it.
+#   3. Manual dispatch for one-off pushes (e.g. after editing by hand).
+on:
+  push:
+    branches: [master]
+    paths:
+      - "main.tf"
+      - ".github/workflows/push-template.yml"
+  workflow_run:
+    workflows: ["Publish Workspace Images"]
+    branches: [master]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  push:
+    # workflow_run fires on any conclusion; gate on success. Direct push and
+    # manual dispatch always proceed.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+    env:
+      # Template metadata — repo is source of truth, re-applied on every push.
+      TEMPLATE_NAME: workspaces
+      TEMPLATE_DISPLAY_NAME: SoureCode Workspaces
+      TEMPLATE_DESCRIPTION: "Sysbox-backed workspaces with a baked-in dev kit. Stacks: base, node, cpp."
+      TEMPLATE_ICON: /emojis/1f9f0.png
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # workflow_run runs against the default-branch SHA implicitly; be
+          # explicit so every trigger checks out the same commit the event
+          # refers to.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Set up Coder CLI
+        uses: coder/setup-action@v1
+        with:
+          access_url: ${{ secrets.CODER_URL }}
+          coder_session_token: ${{ secrets.CODER_SESSION_TOKEN }}
+
+      - name: Stage template archive
+        # `coder templates push` tars the --directory and uploads the whole
+        # tree. Only main.tf defines the template; staging into a clean dir
+        # keeps README, docs/, src/, scripts/, .github/ etc. out of the
+        # archive. Deterministic across Coder versions; no reliance on
+        # .coderignore / .gitignore interpretation.
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/coder-template"
+          cp main.tf "$RUNNER_TEMP/coder-template/"
+
+      - name: Push template version
+        run: |
+          set -euo pipefail
+          version_name="$(git rev-parse --short HEAD)"
+          commit_msg="$(git log -1 --format=%B HEAD)"
+          coder templates push "$TEMPLATE_NAME" \
+            --directory "$RUNNER_TEMP/coder-template" \
+            --name "$version_name" \
+            --message "$commit_msg" \
+            --yes
+
+      - name: Sync template metadata
+        # Template-level fields (display name, description, icon) are managed
+        # by `coder templates edit`, not `push`. Running unconditionally keeps
+        # the Coder UI in sync with the values declared above.
+        run: |
+          set -euo pipefail
+          coder templates edit "$TEMPLATE_NAME" \
+            --display-name "$TEMPLATE_DISPLAY_NAME" \
+            --description "$TEMPLATE_DESCRIPTION" \
+            --icon "$TEMPLATE_ICON" \
+            --yes
