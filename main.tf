@@ -402,9 +402,23 @@ resource "docker_volume" "projects_volume" {
   }
 }
 
+# Re-pull the workspace image on every plan when the registry digest has
+# advanced. The data source reads the remote digest; docker_image.pull_triggers
+# fires when it changes, yielding a new local image_id; the container depends
+# on that image_id so a new push → container recreate on next apply.
+data "docker_registry_image" "workspace" {
+  name = local.workspace_images[data.coder_parameter.workspace_image.value]
+}
+
+resource "docker_image" "workspace" {
+  name          = data.docker_registry_image.workspace.name
+  pull_triggers = [data.docker_registry_image.workspace.sha256_digest]
+  keep_locally  = true
+}
+
 resource "docker_container" "workspace" {
   count   = data.coder_workspace.me.start_count
-  image   = local.workspace_images[data.coder_parameter.workspace_image.value]
+  image   = docker_image.workspace.image_id
   runtime = "sysbox-runc"
 
   name     = "coder-${data.coder_workspace_owner.me.name}-${lower(data.coder_workspace.me.name)}"
