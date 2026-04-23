@@ -26,6 +26,9 @@ locals {
     node = "ghcr.io/sourecode/coder-workspace:node"
     cpp  = "ghcr.io/sourecode/coder-workspace:cpp"
   }
+
+  git_author_name            = coalesce(data.coder_workspace_owner.me.full_name, data.coder_workspace_owner.me.name)
+  git_author_email           = data.coder_workspace_owner.me.email
 }
 
 data "coder_parameter" "workspace_image" {
@@ -213,42 +216,14 @@ module "git-clone" {
   version  = "~> 1.0"
 }
 
-# Git identity for commits made from inside the workspace.
-resource "coder_env" "git_author_name" {
-  count    = data.coder_workspace.me.start_count
-  agent_id = coder_agent.main.id
-  name     = "GIT_AUTHOR_NAME"
-  value    = coalesce(data.coder_workspace_owner.me.full_name, data.coder_workspace_owner.me.name)
-}
-
-resource "coder_env" "git_author_email" {
-  count    = data.coder_workspace.me.start_count
-  agent_id = coder_agent.main.id
-  name     = "GIT_AUTHOR_EMAIL"
-  value    = data.coder_workspace_owner.me.email
-}
-
-resource "coder_env" "git_committer_name" {
-  count    = data.coder_workspace.me.start_count
-  agent_id = coder_agent.main.id
-  name     = "GIT_COMMITTER_NAME"
-  value    = coalesce(data.coder_workspace_owner.me.full_name, data.coder_workspace_owner.me.name)
-}
-
-resource "coder_env" "git_committer_email" {
-  count    = data.coder_workspace.me.start_count
-  agent_id = coder_agent.main.id
-  name     = "GIT_COMMITTER_EMAIL"
-  value    = data.coder_workspace_owner.me.email
-}
-
-# SSH commit signing. Uses the ed25519 key Coder provisions per workspace
-# owner. The user must also register this public key as a *signing key* on
+# Git configuration: identity + SSH commit signing. Identity uses the Coder
+# workspace owner. Signing uses the ed25519 key Coder provisions per owner —
+# the user must also register this public key as a *signing key* on
 # GitHub/GitLab (separate from auth keys) for commits to show as Verified.
-resource "coder_script" "git_ssh_signing" {
+resource "coder_script" "git_setup" {
   count        = data.coder_workspace.me.start_count
   agent_id     = coder_agent.main.id
-  display_name = "Git SSH signing setup"
+  display_name = "Git setup"
   icon         = "/icon/git.svg"
   run_on_start = true
   script       = <<-EOT
@@ -271,6 +246,8 @@ resource "coder_script" "git_ssh_signing" {
       >> ~/.ssh/known_hosts 2>/dev/null || true
     sort -u ~/.ssh/known_hosts -o ~/.ssh/known_hosts
 
+    git config --global user.name  "${local.git_author_name}"
+    git config --global user.email "${local.git_author_email}"
     git config --global gpg.format ssh
     git config --global user.signingkey ~/.ssh/id_ed25519.pub
     git config --global commit.gpgsign true
