@@ -43,9 +43,22 @@ fi
 apt-get install -y --no-install-recommends --no-install-suggests $pkgs
 rm -rf /var/lib/apt/lists/*
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Dev-oriented php.ini overrides. Staged at a known path so pvm can reuse
+# it when installing additional PHP versions later.
+install -m 0755 -d /usr/local/share/php-workspace
+install -m 0644 "$script_dir/workspace.ini" /usr/local/share/php-workspace/workspace.ini
+
+# Apply to every SAPI (cli, fpm, apache2, ...) of the default version that
+# got installed. 99- prefix so it loads last and wins over Sury defaults.
+for sapi_dir in /etc/php/"$PHP_DEFAULT_VERSION"/*/conf.d; do
+  [ -d "$sapi_dir" ] || continue
+  install -m 0644 /usr/local/share/php-workspace/workspace.ini "$sapi_dir/99-workspace.ini"
+done
+
 # pvm — user-level PHP version switcher. Lives next to this installer; see
 # scripts/php/pvm for the script body.
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 install -m 0755 "$script_dir/pvm" /usr/local/bin/pvm
 
 if ! command -v php >/dev/null 2>&1; then
