@@ -395,18 +395,20 @@ resource "docker_volume" "projects_volume" {
   }
 }
 
-# Re-pull the workspace image on every plan when the registry digest has
-# advanced. The data source reads the remote digest; docker_image.pull_triggers
-# fires when it changes, yielding a new local image_id; the container depends
-# on that image_id so a new push → container recreate on next apply.
+# Pin the workspace image to its current remote digest. Every plan re-reads
+# the registry data source; when the remote `:tag` points at a new digest,
+# docker_image.name changes (different `name@sha256:...`), forcing the
+# resource to be replaced — which downloads the new image and advances
+# image_id, which in turn replaces docker_container.workspace. Beats
+# pull_triggers: the identity of the resource itself is the digest, so there
+# is no way for the provider to "already have it" and skip.
 data "docker_registry_image" "workspace" {
   name = local.workspace_images[data.coder_parameter.workspace_image.value]
 }
 
 resource "docker_image" "workspace" {
-  name          = data.docker_registry_image.workspace.name
-  pull_triggers = [data.docker_registry_image.workspace.sha256_digest]
-  keep_locally  = true
+  name         = "${data.docker_registry_image.workspace.name}@${data.docker_registry_image.workspace.sha256_digest}"
+  keep_locally = true
 }
 
 resource "docker_container" "workspace" {
