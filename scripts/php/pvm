@@ -10,7 +10,7 @@
 # "oldest branch still in security support" (longest-lived pin).
 set -e
 
-EXT_SET="cli common curl mbstring xml intl zip gd bcmath opcache mysql pgsql sqlite3 redis xdebug"
+EXT_SET="cli common curl mbstring xml intl zip gd bcmath opcache apcu mysql pgsql sqlite3 redis xdebug"
 USER_BIN="$HOME/.local/bin"
 TOOLS=(php phpize php-config)
 
@@ -111,9 +111,22 @@ cmd_install() {
   local raw="${1:-}" ver
   [ -n "$raw" ] || { usage; exit 1; }
   ver=$(resolve_alias "$raw")
-  local pkgs=""
-  for ext in $EXT_SET; do pkgs="$pkgs php${ver}-${ext}"; done
   sudo apt-get update
+  # Filter to what Sury packages separately for this minor. Opcache, for
+  # example, is bundled into php8.5-common (core as of 8.5) so there's no
+  # php8.5-opcache. Skip-with-warning beats hard-failing on packaging drift.
+  local pkgs="" skipped=""
+  for ext in $EXT_SET; do
+    local p="php${ver}-${ext}"
+    if apt-cache show "$p" >/dev/null 2>&1; then
+      pkgs="$pkgs $p"
+    else
+      skipped="$skipped $ext"
+    fi
+  done
+  if [ -n "$skipped" ]; then
+    echo "pvm: skipped (bundled into -common or not packaged separately for $ver):$skipped" >&2
+  fi
   # shellcheck disable=SC2086
   sudo apt-get install -y --no-install-recommends --no-install-suggests $pkgs
   echo "PHP $ver installed. Activate with: pvm use $ver"

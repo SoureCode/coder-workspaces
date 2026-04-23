@@ -10,7 +10,7 @@ set -e
 PHP_DEFAULT_VERSION="${VERSION:-8.5}"
 # Extensions installed for every version (Sury naming, prefixed at use-site).
 # `common` pulls pdo/phar; `mysql`/`pgsql`/`sqlite3` include their pdo drivers.
-PHP_EXT_SET="cli common curl mbstring xml intl zip gd bcmath opcache mysql pgsql sqlite3 redis xdebug"
+PHP_EXT_SET="cli common curl mbstring xml intl zip gd bcmath opcache apcu mysql pgsql sqlite3 redis xdebug"
 
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://packages.sury.org/php/apt.gpg \
@@ -19,12 +19,26 @@ chmod a+r /etc/apt/keyrings/sury-php.gpg
 echo "deb [signed-by=/etc/apt/keyrings/sury-php.gpg] https://packages.sury.org/php/ $(. /etc/os-release && echo $VERSION_CODENAME) main" \
   > /etc/apt/sources.list.d/sury-php.list
 
-pkgs=""
-for ext in $PHP_EXT_SET; do
-  pkgs="$pkgs php${PHP_DEFAULT_VERSION}-${ext}"
-done
-
 apt-get update
+
+# Filter to extensions Sury actually packages separately for this minor.
+# Some extensions move into -common over time (notably opcache became core
+# and is bundled in php8.5-common — no separate php8.5-opcache package).
+# Install what exists; skip the rest rather than fail the whole install.
+pkgs=""
+skipped=""
+for ext in $PHP_EXT_SET; do
+  p="php${PHP_DEFAULT_VERSION}-${ext}"
+  if apt-cache show "$p" >/dev/null 2>&1; then
+    pkgs="$pkgs $p"
+  else
+    skipped="$skipped $ext"
+  fi
+done
+if [ -n "$skipped" ]; then
+  echo "php: skipped (bundled into -common or not packaged separately by Sury for ${PHP_DEFAULT_VERSION}):${skipped}" >&2
+fi
+
 # shellcheck disable=SC2086
 apt-get install -y --no-install-recommends --no-install-suggests $pkgs
 rm -rf /var/lib/apt/lists/*
