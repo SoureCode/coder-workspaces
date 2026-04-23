@@ -1,46 +1,45 @@
-# Persisting state across devcontainer rebuilds
+# Persisting state across workspace restarts
 
 Our convention: a single per-owner volume bind-mounted at `/mnt/home-persist`,
-plus the `home-persist` feature that symlinks **only declared paths** under
-`$HOME` into that volume. Every feature or project lists the paths it needs
-persisted; a shared resolver wires them up on every create. Everything
-outside the declared set lives in the image and resets on rebuild — same as
-any other container.
+plus a resolver that symlinks **only declared paths** under `$HOME` into that
+volume. Every install script or project lists the paths it needs persisted; the
+resolver wires them up on every agent start. Everything outside the declared
+set lives in the image (or the per-workspace `$HOME` volume) and resets on
+image rebuild — same as any other container.
 
-Compared to a whole-home mount: narrower blast radius, no first-run skeleton
-seeding, no drift between the image's `/etc/skel` and the live `$HOME`, no
-cross-tool leakage between workspaces.
+Compared to a whole-home mount: narrower blast radius, no drift between the
+image and the live `$HOME`, no cross-workspace leakage for paths you didn't
+opt in.
 
 > **Not persistence, but related — `/mnt/shared`.** A single deployment-wide
 > docker volume (`docker_volume.shared` in `main.tf`) is mounted at
-> `/mnt/shared` on every workspace and auto-injected into every devcontainer
-> by the `devcontainer` CLI shim in `Dockerfile.workspace`. No
-> `devcontainer.json` edits needed. Sticky-bit 1777 (like `/tmp`) — anyone
+> `/mnt/shared` on every workspace. Sticky-bit 1777 (like `/tmp`) — anyone
 > can drop files, only the owner can delete them. Use it as a cross-user
 > drop box, not for per-user state.
 
 ## The three moving parts
 
-1. **The volume + bind mount.** In `.devcontainer/devcontainer.json`:
+1. **The volume + mount.** `main.tf` declares `docker_volume.home_persist`
+   (per-owner, lives in the host dockerd) and mounts it into every workspace
+   container at `/mnt/home-persist`:
 
-   ```jsonc
-   {
-     "mounts": [
-       "source=/mnt/home-persist,target=/mnt/home-persist,type=bind"
-     ],
-     "features": {
-       "ghcr.io/sourecode/devcontainer-features/home-persist:1": {}
+   ```hcl
+   resource "docker_volume" "home_persist" {
+     name = "coder-${data.coder_workspace_owner.me.name}-home-persist"
+     ...
+   }
+
+   resource "docker_container" "workspace" {
+     volumes {
+       container_path = "/mnt/home-persist"
+       volume_name    = docker_volume.home_persist.name
      }
    }
    ```
 
-   Source `/mnt/home-persist` is where the Coder template exposes the
-   per-owner docker volume (see Topology). Running outside Coder, change the
-   source to a local path or a named volume — the target stays the same.
-
-2. **The manifest.** Features drop a JSON file into
-   `/etc/devcontainer-persist.d/<name>.json` at build time. Example from
-   `claude-code`:
+2. **The manifest.** Install scripts drop a JSON file into
+   `/etc/home-persist.d/<name>.json` at image build time. Example
+   from `scripts/claude-code/install.sh`:
 
    ```json
    {
@@ -55,20 +54,11 @@ cross-tool leakage between workspaces.
    the first create on an empty volume leaves `~/.claude` as a dangling
    symlink, and any consumer doing `mkdir -p ~/.claude` fails with EEXIST.
 
-   Users can also declare project-local paths via the `paths` option on the
-   `home-persist` feature:
+3. **The resolver.** `main.tf`'s `coder_script.lifecycle_init` invokes
+   `/usr/local/bin/home-persist-resolve` at agent start, with
+   `start_blocks_login = true` so IDEs don't connect before the symlinks are
+   in place. For each declared path:
 
-   ```jsonc
-   "ghcr.io/sourecode/devcontainer-features/home-persist:1": {
-     "paths": ".claude/,.claude.json,.gitconfig"
-   }
-   ```
-
-   That writes `user.json` into the same directory.
-
-3. **The resolver.** `home-persist`'s `onCreateCommand` runs
-   `/usr/local/bin/home-persist-resolve` on every create. For each declared
-   path:
    - If `/mnt/home-persist/<path>` exists → symlink `$HOME/<path>` → it
      (volume wins).
    - Else if `$HOME/<path>` exists (real content from the image) → move it
@@ -82,81 +72,91 @@ cross-tool leakage between workspaces.
 ## Topology
 
 ```
-┌───────────────────────────────────────────────────────────────────┐
-│ host dockerd                                                      │
-│                                                                   │
-│   docker volume: coder-<owner>-home-persist   ◄──── one per owner      │
-│     │                                                             │
-│     ├─► outer workspace A at /mnt/home-persist                    │
-│     │     └─► inner devcontainer (bind) /mnt/home-persist         │
-│     │            └─► symlinks from $HOME into it                  │
-│     │                                                             │
-│     ├─► outer workspace B at /mnt/home-persist                    │
-│     │     └─► inner devcontainer (bind) /mnt/home-persist         │
-│     │                                                             │
-│     └─► outer workspace C at /mnt/home-persist                    │
-│           └─► inner devcontainer (bind) /mnt/home-persist         │
-└───────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│ host dockerd                                                    │
+│                                                                 │
+│   docker volume: coder-<owner>-home-persist  ◄── one per owner  │
+│     │                                                           │
+│     ├─► workspace A at /mnt/home-persist                        │
+│     │     └─► symlinks from $HOME into it                       │
+│     ├─► workspace B at /mnt/home-persist                        │
+│     │     └─► symlinks from $HOME into it                       │
+│     └─► workspace C at /mnt/home-persist                        │
+│           └─► symlinks from $HOME into it                       │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 The volume lives in the **host** dockerd, above any individual workspace.
-It's defined in the Coder template as `docker_volume "home_persist"`, scoped by
-`coder_workspace_owner.me.name`, and bind-mounted into the outer workspace
-container at `/mnt/home-persist`. Each inner devcontainer bind-mounts that
-same path at the same path, and the resolver creates symlinks from `$HOME`
-into it.
+Declared in `main.tf` as `docker_volume "home_persist"`, scoped by
+`coder_workspace_owner.me.name`, and bind-mounted into the workspace
+container at `/mnt/home-persist`.
 
 Properties that fall out:
 
 - Survives workspace deletion. Blowing away a workspace doesn't touch
   `coder-<owner>-home-persist`.
-- Survives `rebuild_no_cache`. That parameter only drops inner dockerd
-  state (`vsc-*` images + BuildKit cache) — not the host-level volume.
 - Scoped to the owner. Identity is tied to the owner, not the workspace —
   rename a workspace, same volume.
 
 ## What's declared today
 
-| Source         | Paths                         | Why                                          |
-| -------------- | ----------------------------- | -------------------------------------------- |
-| `claude-code`  | `.claude/`, `.claude.json`    | Login credentials, sessions, plugins         |
-| `user` (opt-in)| whatever you list             | Project-local additions                      |
+| Source        | Paths                         | Why                                  |
+| ------------- | ----------------------------- | ------------------------------------ |
+| `claude-code` | `.claude/`, `.claude.json`    | Login credentials, sessions, plugins |
 
-Anything not in the declared set is image-owned and resets on rebuild — git
-config, SSH keys, bash history, caches. Two common patterns for those:
+Anything not declared is image-owned (or per-workspace-home-volume-owned)
+and resets on image rebuild — git config, SSH keys, bash history, caches.
+Two common patterns for those:
 
 - **Git identity / SSH keys** — injected per-workspace by Coder via
-  `coder_script` and `coder_env` in `main.tf`. Regenerated every start, no
-  persistence needed.
-- **Dotfiles / aliases** — use Coder's dotfiles repo support or bake into
-  the devcontainer's Dockerfile / `/etc/skel`.
+  `coder_script.git_ssh_signing` and the `coder_env.git_*` resources in
+  `main.tf`. Regenerated every start, no persistence needed.
+- **Shell config / dotfiles** — use Coder's dotfiles repo support or bake
+  into `src/base/Dockerfile` (`/etc/skel`).
 
-If a specific tool needs persistence, add it to the manifest — either
-ship a feature that declares it, or list the path under the `home-persist`
-feature's `paths` option.
+If a specific tool needs persistence, drop a manifest under
+`/etc/home-persist.d/` from its install script.
 
-## Writing a feature that needs HOME persistence
+## Declaring extra paths at workspace creation
 
-Any feature can declare paths by writing a manifest at build time. The
-resolver finds it and handles the rest. Minimal pattern:
+The Coder template exposes a `home_persist_paths` parameter (see `main.tf`).
+Set it to a comma-separated list of `$HOME`-relative paths to add on a
+per-workspace basis — the template's `coder_script.lifecycle_init` writes
+those to `/etc/home-persist.d/user.json` at agent start, before the resolver
+runs.
+
+Example value:
+
+```
+.gitconfig,.bash_history,.config/my-tool/
+```
+
+Trailing `/` marks a directory, same convention as the install-script
+manifests. Change the parameter on an existing workspace, restart it, and
+the new paths are symlinked on next start.
+
+## Writing an install.sh that needs HOME persistence
+
+Any `scripts/<name>/install.sh` can declare paths by writing a manifest at
+image build time. The resolver finds it and handles the rest. Minimal
+pattern:
 
 ```bash
-# in your feature's install.sh
-mkdir -p /etc/devcontainer-persist.d
-cat > /etc/devcontainer-persist.d/my-feature.json <<'EOF'
+mkdir -p /etc/home-persist.d
+cat > /etc/home-persist.d/my-tool.json <<'EOF'
 {
-  "source": "my-feature",
-  "paths": [".my-feature/", ".config/my-feature/", ".my-feature.conf"]
+  "source": "my-tool",
+  "paths": [".my-tool/", ".config/my-tool/", ".my-tool.conf"]
 }
 EOF
 ```
 
 Trailing `/` for directories, no slash for files.
 
-No ordering required — `home-persist`'s `onCreateCommand` runs after all
-features install, so the manifest is always visible by resolve time. Listing
-the same path in two manifests is harmless: the second is logged and
-skipped.
+No install ordering required — `home-persist-resolve` runs at agent start,
+after the image is already built with every script's manifest in place.
+Listing the same path in two manifests is harmless: the second is logged
+and skipped.
 
 ## Resetting state
 

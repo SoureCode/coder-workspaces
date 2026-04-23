@@ -9,30 +9,6 @@ terraform {
   }
 }
 
-variable "workspace_image" {
-  type        = string
-  description = "Workspace container image. Must ship systemd as PID 1 + dockerd, and user `coder` at UID 1000 in the docker group. Built from Dockerfile.workspace in this repo and run under the sysbox-runc runtime."
-  default     = "sourecode/coder-workspace:latest"
-}
-
-variable "devcontainer_user" {
-  type        = string
-  description = "Linux user inside the built devcontainer (inner). Defined by the devcontainer's Dockerfile via build.args.USERNAME."
-  default     = "dev"
-}
-
-variable "devcontainer_user_uid" {
-  type        = number
-  description = "UID for the devcontainer user."
-  default     = 1000
-}
-
-variable "devcontainer_user_gid" {
-  type        = number
-  description = "GID for the devcontainer user."
-  default     = 1000
-}
-
 variable "docker_socket" {
   default     = ""
   description = "(Optional) Docker socket URI"
@@ -40,16 +16,45 @@ variable "docker_socket" {
 }
 
 locals {
-  # Outer workspace user. Fixed because workspace_image ships with it baked in.
   workspace_user = "coder"
   workspace_home = "/home/${local.workspace_user}"
+  workspace_uid  = 1000
+  workspace_gid  = 1000
+
+  workspace_images = {
+    base = "ghcr.io/sourecode/coder-workspace:base"
+    node = "ghcr.io/sourecode/coder-workspace:node"
+    cpp  = "ghcr.io/sourecode/coder-workspace:cpp"
+  }
+}
+
+data "coder_parameter" "workspace_image" {
+  type         = "string"
+  name         = "workspace_image"
+  display_name = "Workspace image"
+  description  = "Which stack image this workspace runs. Each option maps to a ghcr.io/sourecode/coder-workspace tag."
+  default      = "base"
+  mutable      = true
+
+  option {
+    name  = "base — dev-kit only (Node via nvm, Claude, rtk, context-mode, web-shell, home-persist)"
+    value = "base"
+  }
+  option {
+    name  = "node — reserved for future Node-specific tooling (currently identical to base)"
+    value = "node"
+  }
+  option {
+    name  = "cpp — base + llvm + cmake + sccache"
+    value = "cpp"
+  }
 }
 
 data "coder_parameter" "repo_url" {
   type         = "string"
   name         = "repo_url"
   display_name = "Git Repository"
-  description  = "Enter the URL of the Git repository to clone into your workspace. This repository should contain a devcontainer.json file to configure your development environment."
+  description  = "Git repository to clone into the workspace home."
   default      = "https://github.com/coder/coder"
   mutable      = true
 }
@@ -58,27 +63,22 @@ data "coder_parameter" "directory" {
   type         = "string"
   name         = "directory"
   display_name = "Working directory"
-  description  = "Path inside the workspace that IDE modules open by default."
-  default      = "/workspaces"
+  description  = "Folder IDE modules open by default."
+  default      = "/home/coder"
   mutable      = true
 }
 
-# Ephemeral: resets to false after each build. Set to true to force the
-# devcontainer to rebuild without using any cached layers on the next start.
-data "coder_parameter" "rebuild_no_cache" {
-  type         = "bool"
-  name         = "rebuild_no_cache"
-  display_name = "Rebuild devcontainer without cache"
-  description  = "Drop the cached devcontainer image and BuildKit cache before the next build. One-shot."
-  default      = "false"
+data "coder_parameter" "home_persist_paths" {
+  type         = "string"
+  name         = "home_persist_paths"
+  display_name = "Extra persisted HOME paths"
+  description  = "Comma-separated $HOME-relative paths to persist beyond the defaults (e.g. '.gitconfig,.bash_history,.config/my-tool/'). Trailing / marks a directory."
+  default      = ""
   mutable      = true
-  ephemeral    = true
-  order        = 100
 }
 
 provider "coder" {}
 provider "docker" {
-  # Defaulting to null if the variable is an empty string lets us have an optional variable without having to set our own default
   host = var.docker_socket != "" ? var.docker_socket : null
 }
 
@@ -87,9 +87,11 @@ data "coder_workspace" "me" {}
 data "coder_workspace_owner" "me" {}
 
 resource "coder_agent" "main" {
-  arch            = data.coder_provisioner.me.arch
-  os              = "linux"
-  startup_script  = <<-EOT
+  arch = data.coder_provisioner.me.arch
+  os   = "linux"
+  dir  = data.coder_parameter.directory.value
+
+  startup_script = <<-EOT
     set -e
 
     # Prepare user home with default files on first start.
@@ -98,41 +100,24 @@ resource "coder_agent" "main" {
       touch ~/.init_done
     fi
 
-    # SSH key + known_hosts so git over SSH works from inside the workspace.
+    # SSH key for git-over-SSH clones. Public key + allowed_signers come via
+    # coder_script.git_ssh_signing below.
     mkdir -p ~/.ssh && chmod 700 ~/.ssh
     echo "${data.coder_workspace_owner.me.ssh_private_key}" > ~/.ssh/id_ed25519
     chmod 600 ~/.ssh/id_ed25519
-    ssh-keyscan -t ed25519,rsa,ecdsa github.com gitlab.com >> ~/.ssh/known_hosts 2>/dev/null
-    sort -u ~/.ssh/known_hosts -o ~/.ssh/known_hosts
 
-    # /mnt/home-persist is the per-owner persistence volume (see docker_volume.home_persist).
-    # devcontainer.json bind-mounts it into the inner container at the same path,
-    # where the home-persist feature symlinks declared $HOME paths (e.g. ~/.claude,
-    # ~/.claude.json) into it. Chown once per start so the inner user (UID
-    # $DEVCONTAINER_USER_UID) can write it. mkdir is redundant when docker already
-    # mounted the volume but keeps this idempotent if the mount path moves.
+    # Per-owner persistence volume. home-persist-resolve (run via
+    # coder_script.lifecycle_init below) symlinks declared $HOME paths into it.
     sudo mkdir -p /mnt/home-persist
-    sudo chown "$DEVCONTAINER_USER_UID:$DEVCONTAINER_USER_GID" /mnt/home-persist
+    sudo chown "${local.workspace_uid}:${local.workspace_gid}" /mnt/home-persist
 
-    # /mnt/shared is the deployment-wide shared volume (see docker_volume.shared).
-    # Single docker volume attached to every workspace, every owner — a drop box
-    # for moving files between users. Sticky-bit 1777 (like /tmp) so anyone can
-    # write but only the file's owner can delete it.
+    # Deployment-wide shared drop box. Sticky-bit 1777 (like /tmp) so anyone
+    # can write but only the file's owner can delete.
     sudo mkdir -p /mnt/shared
     sudo chmod 1777 /mnt/shared
   EOT
-  shutdown_script = ""
-  dir            = data.coder_parameter.directory.value
 
-  # Exposed to the @devcontainers/cli process so devcontainer.json can resolve
-  # them via ${localEnv:*} — see README for the per-user shared home pattern.
-  # Git identity is set on the sub-agent instead (see coder_env.git_* below).
-  env = {
-    OWNER_USERNAME        = data.coder_workspace_owner.me.name
-    DEVCONTAINER_USERNAME = var.devcontainer_user
-    DEVCONTAINER_USER_UID = var.devcontainer_user_uid
-    DEVCONTAINER_USER_GID = var.devcontainer_user_gid
-  }
+  shutdown_script = ""
 
   metadata {
     display_name = "CPU Usage"
@@ -177,11 +162,11 @@ resource "coder_agent" "main" {
   metadata {
     display_name = "Load Average (Host)"
     key          = "6_load_host"
-    script   = <<EOT
+    script       = <<EOT
       echo "`cat /proc/loadavg | awk '{ print $1 }'` `nproc`" | awk '{ printf "%0.2f", $1/$2 }'
     EOT
-    interval = 60
-    timeout  = 1
+    interval     = 60
+    timeout      = 1
   }
 
   metadata {
@@ -195,40 +180,42 @@ resource "coder_agent" "main" {
   }
 }
 
-# @devcontainers/cli is pre-installed in the workspace image (Dockerfile.workspace).
-# The coder/devcontainers-cli module is intentionally omitted because its
-# runtime `npm install -g` step fails for the non-root `coder` user.
-
-# code-server and JetBrains attach to the devcontainer's sub-agent (not the
-# outer workspace agent), so IDEs run INSIDE the devcontainer — with its user,
-# its language servers, its installed Features. Requires CODER_AGENT_DEVCONTAINERS_ENABLE
-# (default true since v2.24) and a running coder_devcontainer resource.
-#
+# IDE modules attach to the single workspace agent.
 # See https://registry.coder.com/modules/coder/code-server
 module "code-server" {
   count    = data.coder_workspace.me.start_count
   source   = "registry.coder.com/coder/code-server/coder"
   version  = "~> 1.0"
-  agent_id = coder_devcontainer.repo[0].subagent_id
+  agent_id = coder_agent.main.id
+  folder   = data.coder_parameter.directory.value
   order    = 1
 }
 
-module "web-shell" {
-  count    = data.coder_workspace.me.start_count
-  source   = "github.com/SoureCode/devcontainer-features//terraform/web-shell"
-  agent_id = coder_devcontainer.repo[0].subagent_id
-  cwd      = data.coder_parameter.directory.value
-  order    = 2
+resource "coder_app" "web-shell" {
+  count        = data.coder_workspace.me.start_count
+  agent_id     = coder_agent.main.id
+  slug         = "web-shell"
+  display_name = "web-shell"
+  url          = "http://localhost:4000"
+  icon         = "/icon/terminal.svg"
+  subdomain    = true
+  share        = "owner"
+  order        = 2
+
+  healthcheck {
+    url       = "http://localhost:4000/api/sessions"
+    interval  = 5
+    threshold = 6
+  }
 }
 
 # See https://registry.coder.com/modules/coder/jetbrains
 module "jetbrains" {
-  count      = data.coder_workspace.me.start_count
-  source     = "registry.coder.com/coder/jetbrains/coder"
-  version    = "~> 1.0"
-  agent_id   = coder_devcontainer.repo[0].subagent_id
-  agent_name = "main"
-  folder     = data.coder_parameter.directory.value
+  count    = data.coder_workspace.me.start_count
+  source   = "registry.coder.com/coder/jetbrains/coder"
+  version  = "~> 1.0"
+  agent_id = coder_agent.main.id
+  folder   = data.coder_parameter.directory.value
 }
 
 # See https://registry.coder.com/modules/coder/git-clone
@@ -238,80 +225,44 @@ module "git-clone" {
   agent_id = coder_agent.main.id
   url      = data.coder_parameter.repo_url.value
   base_dir = "~"
-  # This ensures that the latest non-breaking version of the module gets
-  # downloaded, you can also pin the module version to prevent breaking
-  # changes in production.
-  version = "~> 1.0"
+  version  = "~> 1.0"
 }
 
-# Runs before the devcontainer CLI. When rebuild_no_cache is set, drop the
-# prior devcontainer image and the BuildKit cache so the next build is from
-# scratch. Script runs on the outer agent where dockerd lives.
-resource "coder_script" "rebuild_no_cache" {
-  count        = data.coder_workspace.me.start_count
-  agent_id     = coder_agent.main.id
-  display_name = "Devcontainer cache reset"
-  icon         = "/icon/docker.svg"
-  run_on_start = true
-  start_blocks_login = false
-  script       = <<-EOT
-    set -e
-    if [ "${data.coder_parameter.rebuild_no_cache.value}" != "true" ]; then
-      exit 0
-    fi
-    echo "rebuild_no_cache=true — dropping devcontainer images and build cache"
-    imgs=$(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '^vsc-' || true)
-    if [ -n "$imgs" ]; then
-      echo "$imgs" | xargs -r docker image rm -f || true
-    fi
-    docker buildx prune -af || true
-  EOT
-}
-
-# Automatically start the devcontainer for the workspace.
-resource "coder_devcontainer" "repo" {
-  count            = data.coder_workspace.me.start_count
-  agent_id         = coder_agent.main.id
-  workspace_folder = "~/${module.git-clone[0].folder_name}"
-}
-
-# Git identity inside the devcontainer. coder_env on the sub-agent injects
-# these into the shell environment of the devcontainer's user.
+# Git identity for commits made from inside the workspace.
 resource "coder_env" "git_author_name" {
   count    = data.coder_workspace.me.start_count
-  agent_id = coder_devcontainer.repo[0].subagent_id
+  agent_id = coder_agent.main.id
   name     = "GIT_AUTHOR_NAME"
   value    = coalesce(data.coder_workspace_owner.me.full_name, data.coder_workspace_owner.me.name)
 }
 
 resource "coder_env" "git_author_email" {
   count    = data.coder_workspace.me.start_count
-  agent_id = coder_devcontainer.repo[0].subagent_id
+  agent_id = coder_agent.main.id
   name     = "GIT_AUTHOR_EMAIL"
   value    = data.coder_workspace_owner.me.email
 }
 
 resource "coder_env" "git_committer_name" {
   count    = data.coder_workspace.me.start_count
-  agent_id = coder_devcontainer.repo[0].subagent_id
+  agent_id = coder_agent.main.id
   name     = "GIT_COMMITTER_NAME"
   value    = coalesce(data.coder_workspace_owner.me.full_name, data.coder_workspace_owner.me.name)
 }
 
 resource "coder_env" "git_committer_email" {
   count    = data.coder_workspace.me.start_count
-  agent_id = coder_devcontainer.repo[0].subagent_id
+  agent_id = coder_agent.main.id
   name     = "GIT_COMMITTER_EMAIL"
   value    = data.coder_workspace_owner.me.email
 }
 
-# SSH commit signing inside the devcontainer. Uses the ed25519 key Coder
-# provisions per workspace owner. The user must also register this public key
-# as a *signing key* on GitHub/GitLab (separate from auth keys) for commits
-# to show as Verified on the web UI.
+# SSH commit signing. Uses the ed25519 key Coder provisions per workspace
+# owner. The user must also register this public key as a *signing key* on
+# GitHub/GitLab (separate from auth keys) for commits to show as Verified.
 resource "coder_script" "git_ssh_signing" {
   count        = data.coder_workspace.me.start_count
-  agent_id     = coder_devcontainer.repo[0].subagent_id
+  agent_id     = coder_agent.main.id
   display_name = "Git SSH signing setup"
   icon         = "/icon/git.svg"
   run_on_start = true
@@ -322,26 +273,19 @@ resource "coder_script" "git_ssh_signing" {
     mkdir -p ~/.ssh
     chmod 700 ~/.ssh
 
-    # Coder-provisioned ed25519 key (same one the outer workspace uses for git clones).
-    printf '%s' "${base64encode(data.coder_workspace_owner.me.ssh_private_key)}" | base64 -d > ~/.ssh/id_ed25519
-    chmod 600 ~/.ssh/id_ed25519
-    printf '%s' "${base64encode(data.coder_workspace_owner.me.ssh_public_key)}"  | base64 -d > ~/.ssh/id_ed25519.pub
+    printf '%s' "${base64encode(data.coder_workspace_owner.me.ssh_public_key)}" | base64 -d > ~/.ssh/id_ed25519.pub
     chmod 644 ~/.ssh/id_ed25519.pub
 
-    # allowed_signers lets `git log --show-signature` / `git verify-commit`
-    # validate your own commits locally.
     printf '%s %s\n' \
       "${data.coder_workspace_owner.me.email}" \
       "$(cat ~/.ssh/id_ed25519.pub)" \
       > ~/.ssh/allowed_signers
     chmod 644 ~/.ssh/allowed_signers
 
-    # known_hosts for common forges so git over SSH doesn't race / prompt.
     ssh-keyscan -t rsa,ecdsa,ed25519 github.com gitlab.com bitbucket.org \
       >> ~/.ssh/known_hosts 2>/dev/null || true
     sort -u ~/.ssh/known_hosts -o ~/.ssh/known_hosts
 
-    # Global git config: sign every commit + tag with SSH.
     git config --global gpg.format ssh
     git config --global user.signingkey ~/.ssh/id_ed25519.pub
     git config --global commit.gpgsign true
@@ -350,11 +294,47 @@ resource "coder_script" "git_ssh_signing" {
   EOT
 }
 
-# Persistent storage for the workspace's inner dockerd (/var/lib/docker).
-# Without this, every devcontainer image + its layer cache is lost on every
-# workspace restart, so feature installs run from scratch. With this, BuildKit
-# reuses cached layers on rebuilds, and previously-pulled/built devcontainer
-# images are instantly available again.
+# Lifecycle hooks baked into the image by the dev-kit install scripts.
+# Sequential execution because context-mode and rtk write into ~/.claude,
+# which must be symlinked into the persistence volume by home-persist first.
+# start_blocks_login keeps IDEs / shells from connecting before $HOME is ready.
+resource "coder_script" "lifecycle_init" {
+  count              = data.coder_workspace.me.start_count
+  agent_id           = coder_agent.main.id
+  display_name       = "Workspace init"
+  icon               = "/icon/docker.svg"
+  run_on_start       = true
+  start_blocks_login = true
+  script             = <<-EOT
+    set -e
+
+    user_paths="${data.coder_parameter.home_persist_paths.value}"
+    if [ -n "$user_paths" ]; then
+      paths_json='[]'
+      IFS=',' read -ra parts <<<"$user_paths"
+      for p in "$${parts[@]}"; do
+        p="$${p#"$${p%%[![:space:]]*}"}"
+        p="$${p%"$${p##*[![:space:]]}"}"
+        [ -z "$p" ] && continue
+        paths_json=$(jq -c --arg p "$p" '. + [$p]' <<<"$paths_json")
+      done
+      if [ "$paths_json" != "[]" ]; then
+        sudo mkdir -p /etc/home-persist.d
+        jq -n --argjson paths "$paths_json" '{source:"user",paths:$paths}' \
+          | sudo tee /etc/home-persist.d/user.json >/dev/null
+      fi
+    fi
+
+    [ -x /usr/local/bin/home-persist-resolve ]          && /usr/local/bin/home-persist-resolve
+    [ -x /usr/local/share/context-mode/post-create.sh ] && /usr/local/share/context-mode/post-create.sh
+    [ -x /usr/local/share/rtk/post-create.sh ]          && /usr/local/share/rtk/post-create.sh
+    exit 0
+  EOT
+}
+
+# Persistent storage for the workspace's inner dockerd. Without this, every
+# `docker pull`, buildx cache, and image built inside the workspace is lost
+# on every restart. The workspace's dockerd runs under sysbox-runc.
 resource "docker_volume" "docker_data" {
   name = "coder-${data.coder_workspace.me.id}-docker"
   lifecycle {
@@ -378,12 +358,9 @@ resource "docker_volume" "docker_data" {
   }
 }
 
-# Per-owner persistence volume. Lives at the HOST level (outer dockerd), not inside
-# any workspace's inner dockerd, so every workspace this owner starts sees the same
-# persisted state (Claude credentials/sessions, anything else declared via the
-# home-persist feature's manifest). Survives workspace deletion and `rebuild_no_cache`.
-# Bind-mounted into the devcontainer via devcontainer.json at /mnt/home-persist;
-# the home-persist feature's onCreateCommand symlinks declared $HOME paths into it.
+# Per-owner persistence volume. Follows the owner across every workspace they
+# open. Survives workspace deletion. Bind-mounted at /mnt/home-persist; the
+# home-persist resolver symlinks declared $HOME paths into it.
 resource "docker_volume" "home_persist" {
   name = "coder-${data.coder_workspace_owner.me.name}-home-persist"
   lifecycle {
@@ -399,10 +376,8 @@ resource "docker_volume" "home_persist" {
   }
 }
 
-# Deployment-wide shared volume. A single docker volume — fixed name, no per-owner
-# or per-workspace suffix — attached to every workspace container. Acts as a drop
-# box for moving files between users. Mounted at /mnt/shared with sticky-bit 1777
-# (see startup_script) so anyone can write but only the file's owner can delete it.
+# Deployment-wide shared drop box. A single docker volume — fixed name, no
+# per-owner/per-workspace suffix — attached to every workspace.
 resource "docker_volume" "shared" {
   name = "coder-shared"
   lifecycle {
@@ -410,13 +385,13 @@ resource "docker_volume" "shared" {
   }
 }
 
+# Per-workspace $HOME volume. Persists user data (~/.bashrc tweaks, cloned
+# repo, build artefacts) across workspace restarts.
 resource "docker_volume" "home_volume" {
   name = "coder-${data.coder_workspace.me.id}-home"
-  # Protect the volume from being deleted due to changes in attributes.
   lifecycle {
     ignore_changes = all
   }
-  # Add labels in Docker to keep track of orphan resources.
   labels {
     label = "coder.owner"
     value = data.coder_workspace_owner.me.name
@@ -429,8 +404,6 @@ resource "docker_volume" "home_volume" {
     label = "coder.workspace_id"
     value = data.coder_workspace.me.id
   }
-  # This field becomes outdated if the workspace is renamed but can
-  # be useful for debugging or cleaning out dangling volumes.
   labels {
     label = "coder.workspace_name_at_creation"
     value = data.coder_workspace.me.name
@@ -439,23 +412,19 @@ resource "docker_volume" "home_volume" {
 
 resource "docker_container" "workspace" {
   count   = data.coder_workspace.me.start_count
-  image   = var.workspace_image
+  image   = local.workspace_images[data.coder_parameter.workspace_image.value]
   runtime = "sysbox-runc"
 
-  # Uses lower() to avoid Docker restriction on container names.
-  name = "coder-${data.coder_workspace_owner.me.name}-${lower(data.coder_workspace.me.name)}"
-  # Hostname makes the shell more user friendly: coder@my-workspace:~$
+  name     = "coder-${data.coder_workspace_owner.me.name}-${lower(data.coder_workspace.me.name)}"
   hostname = data.coder_workspace.me.name
 
-  # Give systemd inside the workspace enough time to shut dockerd down cleanly
-  # on stop. The default (10s) causes SIGKILL mid-flush, which corrupts the
-  # persistent /var/lib/docker volume (missing RW layers, orphan BuildKit
-  # snapshots) on the next start.
+  # Give systemd enough time to shut dockerd down cleanly on stop. The
+  # default (10s) causes SIGKILL mid-flush, which corrupts the persistent
+  # /var/lib/docker volume on the next start.
   stop_timeout = 120
 
-  # PID 1 is /sbin/init (systemd). The Coder agent runs as a systemd unit
-  # (coder-agent.service, baked into the image) that execs /etc/coder/agent-init.sh.
-  # The init script is uploaded below with the workspace-specific token baked in.
+  # PID 1 is /sbin/init (systemd). coder-agent.service (baked into the image)
+  # execs /etc/coder/agent-init.sh, which this `upload` block provides.
   env = [
     "CODER_AGENT_TOKEN=${coder_agent.main.token}"
   ]
@@ -471,38 +440,30 @@ resource "docker_container" "workspace" {
     ip   = "host-gateway"
   }
 
-  # Workspace home volume persists user data across workspace restarts.
   volumes {
     container_path = local.workspace_home
     volume_name    = docker_volume.home_volume.name
     read_only      = false
   }
 
-  # Per-owner persistence volume. Bind-mounted through into the inner devcontainer
-  # via devcontainer.json (at the same path) where the home-persist feature symlinks
-  # declared $HOME paths into it. Follows the owner across every workspace they open.
   volumes {
     container_path = "/mnt/home-persist"
     volume_name    = docker_volume.home_persist.name
     read_only      = false
   }
 
-  # Persist the inner dockerd's image / layer store so devcontainer builds
-  # reuse the BuildKit cache across workspace restarts.
   volumes {
     container_path = "/var/lib/docker"
     volume_name    = docker_volume.docker_data.name
     read_only      = false
   }
 
-  # Deployment-wide shared drop box. Same volume on every workspace, every owner.
   volumes {
     container_path = "/mnt/shared"
     volume_name    = docker_volume.shared.name
     read_only      = false
   }
 
-  # Add labels in Docker to keep track of orphan resources.
   labels {
     label = "coder.owner"
     value = data.coder_workspace_owner.me.name
