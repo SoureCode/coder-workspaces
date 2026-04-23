@@ -45,16 +45,21 @@ rm -rf /var/lib/apt/lists/*
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Dev-oriented php.ini overrides. Staged at a known path so pvm can reuse
-# it when installing additional PHP versions later.
+# Workspace overrides (dev php.ini + xdebug tuning). Staged at a known
+# path so pvm can reuse them when installing additional PHP versions.
 install -m 0755 -d /usr/local/share/php-workspace
 install -m 0644 "$script_dir/workspace.ini" /usr/local/share/php-workspace/workspace.ini
+install -m 0644 "$script_dir/xdebug.ini"    /usr/local/share/php-workspace/xdebug.ini
 
 # Apply to every SAPI (cli, fpm, apache2, ...) of the default version that
-# got installed. 99- prefix so it loads last and wins over Sury defaults.
+# got installed. 99- prefix so they load last and win over Sury defaults.
+# xdebug override only lands where xdebug is actually enabled for the SAPI.
 for sapi_dir in /etc/php/"$PHP_DEFAULT_VERSION"/*/conf.d; do
   [ -d "$sapi_dir" ] || continue
   install -m 0644 /usr/local/share/php-workspace/workspace.ini "$sapi_dir/99-workspace.ini"
+  if ls "$sapi_dir"/*xdebug.ini >/dev/null 2>&1; then
+    install -m 0644 /usr/local/share/php-workspace/xdebug.ini "$sapi_dir/99-xdebug-workspace.ini"
+  fi
 done
 
 # pvm — user-level PHP version switcher. Lives next to this installer; see

@@ -130,15 +130,19 @@ cmd_install() {
   # shellcheck disable=SC2086
   sudo apt-get install -y --no-install-recommends --no-install-suggests $pkgs
 
-  # Layer the staged workspace overrides (dev errors, no memory cap, ...)
-  # over every SAPI dir this version created. Staged by scripts/php/install.sh
-  # at image build time.
-  if [ -r /usr/local/share/php-workspace/workspace.ini ]; then
-    for sapi_dir in /etc/php/"$ver"/*/conf.d; do
-      [ -d "$sapi_dir" ] || continue
+  # Layer the staged workspace overrides (dev errors, no memory cap,
+  # xdebug tuning) over every SAPI dir this version created. Staged by
+  # scripts/php/install.sh at image build time. The xdebug overlay only
+  # lands where xdebug is enabled for the SAPI.
+  for sapi_dir in /etc/php/"$ver"/*/conf.d; do
+    [ -d "$sapi_dir" ] || continue
+    if [ -r /usr/local/share/php-workspace/workspace.ini ]; then
       sudo install -m 0644 /usr/local/share/php-workspace/workspace.ini "$sapi_dir/99-workspace.ini"
-    done
-  fi
+    fi
+    if [ -r /usr/local/share/php-workspace/xdebug.ini ] && ls "$sapi_dir"/*xdebug.ini >/dev/null 2>&1; then
+      sudo install -m 0644 /usr/local/share/php-workspace/xdebug.ini "$sapi_dir/99-xdebug-workspace.ini"
+    fi
+  done
 
   echo "PHP $ver installed. Activate with: pvm use $ver"
 }
