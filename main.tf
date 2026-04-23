@@ -425,7 +425,10 @@ resource "docker_container" "workspace" {
   # the unit picks it up on next start.
   upload {
     file    = "/etc/default/web-shell"
-    content = "WEB_SHELL_CWD=${data.coder_parameter.directory.value}\n"
+    content = <<-EOT
+      WEB_SHELL_CWD=${data.coder_parameter.directory.value}
+      WEB_SHELL_TITLE_PREFIX=${data.coder_workspace.me.name}
+    EOT
   }
 
   host {

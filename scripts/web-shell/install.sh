@@ -9,7 +9,7 @@
 # proxy, which gates access with Coder auth.
 set -e
 
-WS_VERSION_OPT="${VERSION:-0.5.1}"
+WS_VERSION_OPT="${VERSION:-0.6.0}"
 
 # Activate nvm so `npm` resolves against the user's default Node.
 export NVM_DIR="$HOME/.nvm"
