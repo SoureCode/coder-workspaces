@@ -100,15 +100,6 @@ resource "coder_agent" "main" {
     echo "${data.coder_workspace_owner.me.ssh_private_key}" > ~/.ssh/id_ed25519
     chmod 600 ~/.ssh/id_ed25519
 
-    # Per-owner persistence volume. home-persist-resolve (run via
-    # coder_script.lifecycle_init below) symlinks declared $HOME paths into it.
-    sudo mkdir -p /mnt/home-persist
-    sudo chown "${local.workspace_uid}:${local.workspace_gid}" /mnt/home-persist
-
-    # Deployment-wide shared drop box. Sticky-bit 1777 (like /tmp) so anyone
-    # can write but only the file's owner can delete.
-    sudo mkdir -p /mnt/shared
-    sudo chmod 1777 /mnt/shared
   EOT
 
   shutdown_script = ""
@@ -347,6 +338,27 @@ resource "coder_script" "lifecycle_init" {
     [ -x "$HOME/.local/share/rtk/post-create.sh" ]      && "$HOME/.local/share/rtk/post-create.sh"
     exit 0
   EOT
+}
+
+# Drop leftover state entries from pre-c56cc1d templates without deleting the
+# underlying Docker volumes. Existing workspaces still carry
+# docker_volume.shared / docker_volume.home_persist in their tfstate; on every
+# stop/destroy Terraform tries to remove the real volumes (which hold shared
+# and per-owner persistent data). These `removed` blocks tell Terraform to
+# forget the addresses on the next apply while leaving the volumes intact.
+# Safe to delete once no workspace has those addresses in state anymore.
+removed {
+  from = docker_volume.shared
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = docker_volume.home_persist
+  lifecycle {
+    destroy = false
+  }
 }
 
 # Persistent storage for the workspace's inner dockerd. Without this, every

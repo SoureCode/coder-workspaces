@@ -1,0 +1,18 @@
+[Unit]
+Description=Coder Agent
+After=docker.service network-online.target
+Wants=network-online.target docker.service
+ConditionPathExists=/etc/coder/agent-init.sh
+
+[Service]
+Type=simple
+User=coder
+Group=coder
+WorkingDirectory=/home/coder
+PassEnvironment=CODER_AGENT_TOKEN
+ExecStart=/bin/bash /etc/coder/agent-init.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

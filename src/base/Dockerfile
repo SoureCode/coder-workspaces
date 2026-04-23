@@ -96,28 +96,14 @@ USER root
 # Coder agent: systemd unit runs /etc/coder/agent-init.sh as the workspace
 # user after dockerd is up. The script itself is uploaded at container-create
 # time by the Terraform template (kreuzwerker/docker `upload` block).
-RUN mkdir -p /etc/coder && \
-    cat > /etc/systemd/system/coder-agent.service <<EOF
-[Unit]
-Description=Coder Agent
-After=docker.service network-online.target
-Wants=network-online.target docker.service
-ConditionPathExists=/etc/coder/agent-init.sh
-
-[Service]
-Type=simple
-User=${USERNAME}
-Group=${USERNAME}
-WorkingDirectory=/home/${USERNAME}
-PassEnvironment=CODER_AGENT_TOKEN
-ExecStart=/bin/bash /etc/coder/agent-init.sh
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
+RUN mkdir -p /etc/coder
+COPY coder-agent.service /etc/systemd/system/coder-agent.service
 RUN systemctl enable coder-agent.service
 
+# Entrypoint claims fresh-volume mountpoints for the workspace user before
+# systemd starts. See entrypoint.sh for rationale.
+COPY --chmod=0755 entrypoint.sh /usr/local/sbin/coder-entrypoint
+ENV USERNAME=${USERNAME}
+
+ENTRYPOINT ["/usr/local/sbin/coder-entrypoint"]
 CMD ["/sbin/init"]
