@@ -25,6 +25,7 @@ locals {
     base = "ghcr.io/sourecode/coder-workspace:base"
     node = "ghcr.io/sourecode/coder-workspace:node"
     cpp  = "ghcr.io/sourecode/coder-workspace:cpp"
+    php  = "ghcr.io/sourecode/coder-workspace:php"
   }
 
   git_author_name            = coalesce(data.coder_workspace_owner.me.full_name, data.coder_workspace_owner.me.name)
@@ -50,6 +51,10 @@ data "coder_parameter" "workspace_image" {
   option {
     name  = "cpp — base + llvm + cmake + sccache"
     value = "cpp"
+  }
+  option {
+    name  = "php — base + Sury PHP (default 8.5) + composer + symfony-cli + frankenphp + pvm"
+    value = "php"
   }
 }
 

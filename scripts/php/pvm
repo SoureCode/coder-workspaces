@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# pvm — PHP version manager. Switches which PHP the user invokes as `php`
+# by flipping symlinks in $HOME/.local/bin (already on PATH via base's
+# pipx ensurepath). No sudo for `use` / `ls` / `current`; only `install` /
+# `remove` touch apt.
+#
+# Aliases 'latest' / 'lts' resolve against php.net's supported-versions
+# list; falls back to locally-packaged Sury versions if php.net is
+# unreachable. PHP has no official LTS — 'lts' is our convention for
+# "oldest branch still in security support" (longest-lived pin).
+set -e
+
+EXT_SET="cli common curl mbstring xml intl zip gd bcmath opcache mysql pgsql sqlite3 redis xdebug"
+USER_BIN="$HOME/.local/bin"
+TOOLS=(php phpize php-config)
+
+usage() {
+  cat <<EOF
+pvm — PHP version manager (Sury-backed).
+
+Usage:
+  pvm                  Show active PHP version.
+  pvm ls               List installed versions (* = active).
+  pvm ls-remote        List versions packaged by Sury.
+  pvm use <ver>        Link \$HOME/.local/bin/{php,phpize,php-config} → phpX.Y.
+  pvm install <ver>    apt-install phpX.Y-* from Sury (uses sudo).
+  pvm remove <ver>     apt-purge phpX.Y-* (uses sudo).
+
+Aliases: 'latest' = newest supported branch (php.net); 'lts' = oldest branch
+still in security support (php.net). Falls back to locally-packaged Sury
+versions if php.net is unreachable.
+EOF
+}
+
+sury_versions() {
+  apt-cache search --names-only '^php[0-9]+\.[0-9]+-cli$' 2>/dev/null \
+    | awk '{print $1}' | sed -n 's/^php\([0-9.]*\)-cli$/\1/p' | sort -V
+}
+
+# php.net's ?json endpoint returns supported_versions ordered oldest → newest.
+# Only major=8 today; update when PHP 9 ships.
+supported_versions() {
+  curl -fsSL --max-time 5 'https://www.php.net/releases/index.php?json&version=8' 2>/dev/null \
+    | jq -r '.supported_versions[]?' 2>/dev/null
+}
+
+resolve_alias() {
+  local list
+  case "$1" in
+    latest)
+      list=$(supported_versions); [ -z "$list" ] && list=$(sury_versions)
+      echo "$list" | tail -n 1
+      ;;
+    lts)
+      list=$(supported_versions)
+      if [ -n "$list" ]; then
+        echo "$list" | head -n 1
+      else
+        list=$(sury_versions)
+        if [ "$(echo "$list" | wc -l)" -lt 2 ]; then
+          echo "$list" | tail -n 1
+        else
+          echo "$list" | tail -n 2 | head -n 1
+        fi
+      fi
+      ;;
+    *) echo "$1" ;;
+  esac
+}
+
+installed_versions() {
+  compgen -G '/usr/bin/php[0-9].[0-9]' 2>/dev/null \
+    | sed -n 's|/usr/bin/php||p' | sort -V
+}
+
+active_version() {
+  local link
+  link=$(readlink "$USER_BIN/php" 2>/dev/null || true)
+  if [ -n "$link" ]; then
+    basename "$link" | sed 's/^php//'
+  elif command -v php >/dev/null 2>&1; then
+    php -r 'echo PHP_MAJOR_VERSION . "." . PHP_MINOR_VERSION;' 2>/dev/null || true
+  fi
+}
+
+cmd_ls() {
+  local current
+  current=$(active_version)
+  for v in $(installed_versions); do
+    if [ "$v" = "$current" ]; then echo "* $v"; else echo "  $v"; fi
+  done
+}
+
+cmd_ls_remote() { sury_versions; }
+
+cmd_use() {
+  local raw="${1:-}" ver
+  [ -n "$raw" ] || { usage; exit 1; }
+  ver=$(resolve_alias "$raw")
+  [ -x "/usr/bin/php$ver" ] || { echo "pvm: PHP $ver not installed. Try: pvm install $raw" >&2; exit 1; }
+  mkdir -p "$USER_BIN"
+  for t in "${TOOLS[@]}"; do
+    if [ -x "/usr/bin/${t}${ver}" ]; then
+      ln -sfn "/usr/bin/${t}${ver}" "$USER_BIN/$t"
+    fi
+  done
+  echo "PHP $ver active ($USER_BIN/php → /usr/bin/php$ver)."
+}
+
+cmd_install() {
+  local raw="${1:-}" ver
+  [ -n "$raw" ] || { usage; exit 1; }
+  ver=$(resolve_alias "$raw")
+  local pkgs=""
+  for ext in $EXT_SET; do pkgs="$pkgs php${ver}-${ext}"; done
+  sudo apt-get update
+  # shellcheck disable=SC2086
+  sudo apt-get install -y --no-install-recommends --no-install-suggests $pkgs
+  echo "PHP $ver installed. Activate with: pvm use $ver"
+}
+
+cmd_remove() {
+  local raw="${1:-}" ver
+  [ -n "$raw" ] || { usage; exit 1; }
+  ver=$(resolve_alias "$raw")
+  sudo apt-get purge -y "php${ver}*"
+  sudo apt-get autoremove -y
+}
+
+cmd_current() {
+  local v
+  v=$(active_version)
+  [ -n "$v" ] && echo "$v" || { echo "pvm: no PHP active" >&2; exit 1; }
+}
+
+case "${1:-current}" in
+  ls|list)          cmd_ls ;;
+  ls-remote)        cmd_ls_remote ;;
+  use)              shift; cmd_use "$@" ;;
+  install)          shift; cmd_install "$@" ;;
+  remove|uninstall) shift; cmd_remove "$@" ;;
+  current|'')       cmd_current ;;
+  -h|--help|help)   usage ;;
+  *)                usage; exit 1 ;;
+esac
