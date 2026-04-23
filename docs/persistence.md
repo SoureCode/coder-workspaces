@@ -103,6 +103,7 @@ Properties that fall out:
 | Source        | Paths                         | Why                                  |
 | ------------- | ----------------------------- | ------------------------------------ |
 | `claude-code` | `.claude/`, `.claude.json`    | Login credentials, sessions, plugins |
+| `jetbrains`   | `.cache/JetBrains/`, `.config/JetBrains/`, `.local/share/JetBrains/`, `.java/.userPrefs/jetbrains/` | The workspace is headless — Toolbox/Gateway runs on the user's local machine. Clicking the IDE button opens a `jetbrains-gateway://` URL; Gateway SSHes in and has `remote-dev-server.sh` download the IDE backend into `~/.cache/JetBrains/RemoteDev/dist/` on first connect (hundreds of MB per IDE). The three JetBrains roots keep the downloaded backend plus per-IDE `RemoteDev-<Code>/` settings, plugins, and project indexes. `.java/.userPrefs/jetbrains/` is the Java `Preferences` store the IDEs use for JetBrains Account / JetProfile login, license activation, and non-commercial-license acceptance — persisting it avoids re-login on every restart. |
 
 Anything not declared is image-owned (or per-workspace-home-volume-owned)
 and resets on image rebuild — git config, SSH keys, bash history, caches.

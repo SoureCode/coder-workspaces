@@ -80,7 +80,7 @@ ENV _REMOTE_USER=${USERNAME}
 
 # System-wide installers run as root.
 RUN --mount=type=bind,source=scripts,target=/scripts \
-    for s in context-mode home-persist; do \
+    for s in context-mode home-persist jetbrains; do \
       bash "/scripts/$s/install.sh"; \
     done
 

@@ -15,7 +15,7 @@ Images are published to GHCR under `ghcr.io/sourecode/coder-workspace`.
 
 | Tag | Base | Adds |
 |---|---|---|
-| `base` | `debian:trixie-slim` | systemd + dockerd + `nvm` + `claude-code` + `rtk` + `context-mode` + `web-shell` + `home-persist` |
+| `base` | `debian:trixie-slim` | systemd + dockerd + `nvm` + `claude-code` + `rtk` + `context-mode` + `web-shell` + `home-persist` + `jetbrains` |
 | `node` | `:base` | named variant for future Node-specific tooling — currently identical to `base` (Node comes from nvm) |
 | `cpp`  | `:base` | `llvm` (clang + toolchain), `cmake`, `sccache`, `/etc/profile.d/llvm-env.sh` exporting `CC`/`CXX` |
 
@@ -31,6 +31,7 @@ the workspace in Coder.
 | `context-mode` | [`context-mode`](https://github.com/mksglu/context-mode) Claude plugin | Installed via a post-create hook so it lands in the persisted `~/.claude/plugins` |
 | `nvm` | [nvm](https://github.com/nvm-sh/nvm) at `/usr/local/share/nvm` | Default Node = LTS, `node`/`npm`/`npx` in `/usr/local/bin` |
 | `web-shell` | [web-shell](https://github.com/SoureCode/web-shell), persistent browser terminal | systemd unit, registered as a Coder app |
+| `jetbrains` | JetBrains Gateway remote backend persistence | Headless-only: Toolbox/Gateway runs on the user's local machine, opens a `jetbrains-gateway://` URL that SSHes in and runs `remote-dev-server.sh` here. Declares `~/.cache/JetBrains/`, `~/.config/JetBrains/`, `~/.local/share/JetBrains/`, `~/.java/.userPrefs/jetbrains/` to `home-persist` so the downloaded IDE backend, per-IDE settings, plugins, project indexes and JetProfile login survive workspace restarts. |
 | `home-persist` | Manifest-driven `$HOME` persistence | Reads `/etc/home-persist.d/*.json`, symlinks declared paths under `/mnt/home-persist` (per-owner volume). Add extra per-workspace paths via the `home_persist_paths` Coder parameter. See [`docs/persistence.md`](docs/persistence.md). |
 | `llvm` (cpp) | Clang toolchain via [apt.llvm.org](https://apt.llvm.org/) | `CC=clang`, `CXX=clang++` via `/etc/profile.d/llvm-env.sh` |
 | `cmake` (cpp) | CMake from [Kitware's GitHub releases](https://cmake.org/) | latest by default |

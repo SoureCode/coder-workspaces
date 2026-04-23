@@ -253,6 +253,13 @@ resource "coder_script" "git_setup" {
     git config --global commit.gpgsign true
     git config --global tag.gpgsign true
     git config --global gpg.ssh.allowedSignersFile ~/.ssh/allowed_signers
+
+    # Global gitignore. Git auto-picks $XDG_CONFIG_HOME/git/ignore as
+    # core.excludesFile on Linux — no extra config needed. Keeps IDE-local
+    # project state (JetBrains .idea/) out of every repo the user touches,
+    # without needing per-repo .gitignore edits.
+    mkdir -p ~/.config/git
+    printf '.idea/\n' > ~/.config/git/ignore
   EOT
 }
 
