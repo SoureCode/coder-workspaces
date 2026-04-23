@@ -98,7 +98,11 @@ USER root
 # time by the Terraform template (kreuzwerker/docker `upload` block).
 RUN mkdir -p /etc/coder
 COPY src/base/coder-agent.service /etc/systemd/system/coder-agent.service
-RUN systemctl enable coder-agent.service
+COPY src/base/web-shell.service /etc/systemd/system/web-shell.service
+COPY --chmod=0755 src/base/web-shell-launch.sh /usr/local/bin/web-shell-launch
+RUN install -m 0644 /dev/null /var/log/web-shell.log && \
+    chown coder:coder /var/log/web-shell.log && \
+    systemctl enable coder-agent.service web-shell.service
 
 # Entrypoint claims fresh-volume mountpoints for the workspace user before
 # systemd starts. See entrypoint.sh for rationale.

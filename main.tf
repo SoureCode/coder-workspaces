@@ -194,25 +194,6 @@ resource "coder_app" "web-shell" {
   }
 }
 
-# Start web-shell on agent start. web-shell lives in the user's nvm default
-# node bin, so load nvm and activate the default alias to put it on PATH.
-resource "coder_script" "web_shell" {
-  count        = data.coder_workspace.me.start_count
-  agent_id     = coder_agent.main.id
-  display_name = "web-shell"
-  icon         = "/icon/terminal.svg"
-  run_on_start = true
-  script       = <<-EOT
-    #!/usr/bin/env bash
-    set -e
-    export NVM_DIR="$HOME/.nvm"
-    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm use default >/dev/null 2>&1 || true
-    HOST=127.0.0.1 PORT=4000 WEB_SHELL_CWD="${data.coder_parameter.directory.value}" \
-      nohup web-shell > /tmp/web-shell.log 2>&1 &
-    disown >/dev/null 2>&1 || true
-  EOT
-}
-
 # See https://registry.coder.com/modules/coder/jetbrains
 module "jetbrains" {
   count    = data.coder_workspace.me.start_count
@@ -451,6 +432,14 @@ resource "docker_container" "workspace" {
     file       = "/etc/coder/agent-init.sh"
     executable = true
     content    = replace(coder_agent.main.init_script, "/localhost|127\\.0\\.0\\.1/", "host.docker.internal")
+  }
+
+  # Config for web-shell.service (baked into the image). The unit reads this
+  # via EnvironmentFile; changing the `directory` parameter re-renders it and
+  # the unit picks it up on next start.
+  upload {
+    file    = "/etc/default/web-shell"
+    content = "WEB_SHELL_CWD=${data.coder_parameter.directory.value}\n"
   }
 
   host {
