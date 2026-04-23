@@ -77,10 +77,18 @@ USER root
 # env var the devcontainer CLI used at feature-install time.
 ENV _REMOTE_USER=${USERNAME}
 
+# System-wide installers run as root.
 RUN --mount=type=bind,source=scripts,target=/scripts \
-    for s in nvm claude-code rtk context-mode web-shell home-persist; do \
+    for s in nvm rtk context-mode web-shell home-persist; do \
       bash "/scripts/$s/install.sh"; \
     done
+
+# Per-user installers run as the remote user directly — upstream installer
+# writes land in $HOME with correct ownership; no root+chown dance.
+USER ${USERNAME}
+RUN --mount=type=bind,source=scripts,target=/scripts \
+    bash "/scripts/claude-code/install.sh"
+USER root
 
 # Coder agent: systemd unit runs /etc/coder/agent-init.sh as the workspace
 # user after dockerd is up. The script itself is uploaded at container-create

@@ -30,8 +30,12 @@ curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/v${NVM_VERSION}/install
 
 cat >/etc/profile.d/nvm.sh <<EOF
 export NVM_DIR="$NVM_DIR"
-[ -s "\$NVM_DIR/nvm.sh" ] && \\. "\$NVM_DIR/nvm.sh"
-[ -s "\$NVM_DIR/bash_completion" ] && \\. "\$NVM_DIR/bash_completion"
+if [ -s "\$NVM_DIR/nvm.sh" ]; then
+  \\. "\$NVM_DIR/nvm.sh"
+  [ -s "\$NVM_DIR/bash_completion" ] && \\. "\$NVM_DIR/bash_completion"
+  # Activate the default alias if present — puts node/npm/npx on PATH.
+  [ -s "\$NVM_DIR/alias/default" ] && nvm use default >/dev/null 2>&1
+fi
 EOF
 chmod 644 /etc/profile.d/nvm.sh
 
@@ -75,12 +79,6 @@ if [ "$NODE_VERSION" != "none" ]; then
   # shellcheck disable=SC2086
   nvm install $NVM_INSTALL_ARG
   nvm alias default "$NVM_ALIAS_TARGET"
-
-  NODE_BIN_DIR="$(dirname "$(nvm which default)")"
-  for bin in node npm npx corepack; do
-    [ -x "$NODE_BIN_DIR/$bin" ] || continue
-    ln -sf "$NODE_BIN_DIR/$bin" "/usr/local/bin/$bin"
-  done
 fi
 
 chown -R "$USER_NAME:$USER_GROUP" "$NVM_DIR"

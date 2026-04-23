@@ -308,6 +308,10 @@ resource "coder_script" "lifecycle_init" {
   script             = <<-EOT
     set -e
 
+    # Source ~/.profile so PATH hooks (e.g. $HOME/.local/bin from claude-code)
+    # take effect for the post-create scripts invoked below.
+    [ -f "$HOME/.profile" ] && . "$HOME/.profile"
+
     user_paths="${data.coder_parameter.home_persist_paths.value}"
     if [ -n "$user_paths" ]; then
       paths_json='[]'

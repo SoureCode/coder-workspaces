@@ -82,16 +82,13 @@ curl -fsSL -o "$TMPDIR/web-shell.tgz" "$TARBALL_URL"
 
 npm install -g "$TMPDIR/web-shell.tgz"
 
-# 5. Stable symlink at /usr/local/bin/web-shell — the nvm prefix isn't on the
-# systemd service PATH.
+# 5. Resolve the absolute path to the binary so the systemd unit doesn't
+# depend on $PATH / symlinks at service start time.
 NPM_PREFIX="$(npm config get prefix)"
 WS_BIN="$NPM_PREFIX/bin/web-shell"
 if [ ! -x "$WS_BIN" ]; then
   echo "web-shell: $WS_BIN missing after npm install." >&2
   exit 1
-fi
-if [ "$WS_BIN" != "/usr/local/bin/web-shell" ]; then
-  ln -sf "$WS_BIN" /usr/local/bin/web-shell
 fi
 
 # 6. Systemd unit. We always write it — even when systemd isn't PID 1 right
@@ -110,7 +107,7 @@ WorkingDirectory=${USER_HOME}
 Environment=HOME=${USER_HOME}
 Environment=HOST=127.0.0.1
 Environment=PORT=${WS_PORT}
-ExecStart=/usr/local/bin/web-shell
+ExecStart=${WS_BIN}
 Restart=on-failure
 RestartSec=1
 
@@ -142,7 +139,7 @@ else
 # supervisor is used instead.
 if ! pgrep -u "\$(id -u)" -f '/usr/local/bin/web-shell' >/dev/null 2>&1; then
   HOST='127.0.0.1' PORT='${WS_PORT}' \\
-    nohup sh -c 'while true; do /usr/local/bin/web-shell; sleep 1; done' \\
+    nohup sh -c 'while true; do ${WS_BIN}; sleep 1; done' \\
     > /tmp/web-shell.log 2>&1 &
   disown >/dev/null 2>&1 || true
 fi
