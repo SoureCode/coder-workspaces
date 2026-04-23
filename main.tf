@@ -358,33 +358,6 @@ resource "docker_volume" "docker_data" {
   }
 }
 
-# Per-owner persistence volume. Follows the owner across every workspace they
-# open. Survives workspace deletion. Bind-mounted at /mnt/home-persist; the
-# home-persist resolver symlinks declared $HOME paths into it.
-resource "docker_volume" "home_persist" {
-  name = "coder-${data.coder_workspace_owner.me.name}-home-persist"
-  lifecycle {
-    ignore_changes = all
-  }
-  labels {
-    label = "coder.owner"
-    value = data.coder_workspace_owner.me.name
-  }
-  labels {
-    label = "coder.owner_id"
-    value = data.coder_workspace_owner.me.id
-  }
-}
-
-# Deployment-wide shared drop box. A single docker volume — fixed name, no
-# per-owner/per-workspace suffix — attached to every workspace.
-resource "docker_volume" "shared" {
-  name = "coder-shared"
-  lifecycle {
-    ignore_changes = all
-  }
-}
-
 # Per-workspace $HOME volume. Persists user data (~/.bashrc tweaks, cloned
 # repo, build artefacts) across workspace restarts.
 resource "docker_volume" "home_volume" {
@@ -446,9 +419,14 @@ resource "docker_container" "workspace" {
     read_only      = false
   }
 
+  # home_persist and shared are NOT terraform-managed — they're owned outside
+  # this workspace's lifecycle (per-owner and deployment-wide respectively).
+  # Referencing them by name means workspace destroy won't try to remove them
+  # (which would fail while other workspaces hold them). Docker auto-creates
+  # on first attach; pre-create on the host if you want labels for tracking.
   volumes {
     container_path = "/mnt/home-persist"
-    volume_name    = docker_volume.home_persist.name
+    volume_name    = "coder-${data.coder_workspace_owner.me.name}-home-persist"
     read_only      = false
   }
 
@@ -460,7 +438,7 @@ resource "docker_container" "workspace" {
 
   volumes {
     container_path = "/mnt/shared"
-    volume_name    = docker_volume.shared.name
+    volume_name    = "coder-shared"
     read_only      = false
   }
 

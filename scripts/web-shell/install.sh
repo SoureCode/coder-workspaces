@@ -16,7 +16,7 @@
 # reached via Coder's reverse proxy, which gates access with Coder auth.
 set -e
 
-WS_VERSION_OPT="${VERSION:-latest}"
+WS_VERSION_OPT="${VERSION:-0.5.0}"
 WS_PORT="${PORT:-4000}"
 
 # Resolve the container's remote user. $_REMOTE_USER is set by the Dockerfile's
