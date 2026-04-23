@@ -8,11 +8,5 @@
 # Coder parameter.
 set -e
 
-if ! command -v jq >/dev/null 2>&1; then
-  apt-get update
-  apt-get install -y --no-install-recommends jq ca-certificates
-  rm -rf /var/lib/apt/lists/*
-fi
-
 mkdir -p /etc/home-persist.d
 install -m 0755 "$(dirname "$0")/resolve.sh" /usr/local/bin/home-persist-resolve

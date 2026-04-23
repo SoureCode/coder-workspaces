@@ -1,15 +1,9 @@
 #!/usr/bin/env bash
-# sccache installer.
+# sccache installer. Runs as the workspace user — binary lands in $HOME/.local/bin.
 # https://github.com/mozilla/sccache
 set -e
 
 SCCACHE_VERSION="${VERSION:-latest}"
-
-if ! command -v curl >/dev/null 2>&1 || ! command -v tar >/dev/null 2>&1; then
-  apt-get update
-  apt-get install -y --no-install-recommends curl ca-certificates tar
-  rm -rf /var/lib/apt/lists/*
-fi
 
 if [ "$SCCACHE_VERSION" = "latest" ]; then
   SCCACHE_VERSION="$(curl -fsSL https://api.github.com/repos/mozilla/sccache/releases/latest \
@@ -23,11 +17,7 @@ case "$ARCH" in
   *) echo "sccache: unsupported arch: $ARCH" >&2; exit 1 ;;
 esac
 
-TMPDIR="$(mktemp -d)"
-trap 'rm -rf "$TMPDIR"' EXIT
-
-curl -fsSL -o "$TMPDIR/sccache.tar.gz" \
-  "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/sccache-v${SCCACHE_VERSION}-${SC_ARCH}.tar.gz"
-tar -xzf "$TMPDIR/sccache.tar.gz" -C "$TMPDIR"
-
-install -m 0755 "$TMPDIR/sccache-v${SCCACHE_VERSION}-${SC_ARCH}/sccache" /usr/local/bin/sccache
+mkdir -p "$HOME/.local/bin"
+curl -fsSL "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/sccache-v${SCCACHE_VERSION}-${SC_ARCH}.tar.gz" \
+  | tar -xzf - -C "$HOME/.local/bin" --strip-components=1 \
+      "sccache-v${SCCACHE_VERSION}-${SC_ARCH}/sccache"

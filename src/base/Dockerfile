@@ -28,7 +28,7 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
 # Baseline packages + Docker engine.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
-        bash build-essential containerd.io docker-ce docker-ce-cli \
+        bash build-essential ca-certificates containerd.io curl docker-ce docker-ce-cli \
         docker-buildx-plugin docker-compose-plugin dtach file git gnupg \
         htop iproute2 iputils-ping jq less locales lsb-release lsof \
         man-db openssh-client pipx procps python3 python3-pip rsync strace \
@@ -65,6 +65,7 @@ RUN useradd "${USERNAME}" \
         --groups=docker \
         --uid=${USER_UID} \
         --user-group && \
+    install -d -o "${USERNAME}" -g "${USERNAME}" -m 0755 "/home/${USERNAME}/projects" && \
     echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/nopasswd && \
     chmod 0440 /etc/sudoers.d/nopasswd
 
@@ -79,15 +80,17 @@ ENV _REMOTE_USER=${USERNAME}
 
 # System-wide installers run as root.
 RUN --mount=type=bind,source=scripts,target=/scripts \
-    for s in nvm rtk context-mode web-shell home-persist; do \
+    for s in context-mode home-persist; do \
       bash "/scripts/$s/install.sh"; \
     done
 
-# Per-user installers run as the remote user directly — upstream installer
-# writes land in $HOME with correct ownership; no root+chown dance.
+# Per-user installers run as the remote user directly — upstream installers
+# write into $HOME with correct ownership; no root+chown dance.
 USER ${USERNAME}
 RUN --mount=type=bind,source=scripts,target=/scripts \
-    bash "/scripts/claude-code/install.sh"
+    for s in nvm claude-code rtk web-shell; do \
+      bash "/scripts/$s/install.sh"; \
+    done
 USER root
 
 # Coder agent: systemd unit runs /etc/coder/agent-init.sh as the workspace

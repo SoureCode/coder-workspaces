@@ -9,12 +9,6 @@
 # so it writes through the symlink into the persistent volume on every start.
 set -e
 
-if ! command -v git >/dev/null 2>&1; then
-  apt-get update
-  apt-get install -y --no-install-recommends git ca-certificates
-  rm -rf /var/lib/apt/lists/*
-fi
-
 mkdir -p /usr/local/share/context-mode
 cat >/usr/local/share/context-mode/post-create.sh <<'EOF'
 #!/usr/bin/env bash

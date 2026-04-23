@@ -63,8 +63,8 @@ data "coder_parameter" "directory" {
   type         = "string"
   name         = "directory"
   display_name = "Working directory"
-  description  = "Folder IDE modules open by default."
-  default      = "/home/coder"
+  description  = "Folder IDE modules and web-shell open by default."
+  default      = "/home/coder/projects"
   mutable      = true
 }
 
@@ -93,12 +93,6 @@ resource "coder_agent" "main" {
 
   startup_script = <<-EOT
     set -e
-
-    # Prepare user home with default files on first start.
-    if [ ! -f ~/.init_done ]; then
-      cp -rT /etc/skel ~
-      touch ~/.init_done
-    fi
 
     # SSH key for git-over-SSH clones. Public key + allowed_signers come via
     # coder_script.git_ssh_signing below.
@@ -209,6 +203,25 @@ resource "coder_app" "web-shell" {
   }
 }
 
+# Start web-shell on agent start. web-shell lives in the user's nvm default
+# node bin, so load nvm and activate the default alias to put it on PATH.
+resource "coder_script" "web_shell" {
+  count        = data.coder_workspace.me.start_count
+  agent_id     = coder_agent.main.id
+  display_name = "web-shell"
+  icon         = "/icon/terminal.svg"
+  run_on_start = true
+  script       = <<-EOT
+    #!/usr/bin/env bash
+    set -e
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm use default >/dev/null 2>&1 || true
+    HOST=127.0.0.1 PORT=4000 WEB_SHELL_CWD="${data.coder_parameter.directory.value}" \
+      nohup web-shell > /tmp/web-shell.log 2>&1 &
+    disown >/dev/null 2>&1 || true
+  EOT
+}
+
 # See https://registry.coder.com/modules/coder/jetbrains
 module "jetbrains" {
   count    = data.coder_workspace.me.start_count
@@ -224,7 +237,7 @@ module "git-clone" {
   source   = "registry.coder.com/coder/git-clone/coder"
   agent_id = coder_agent.main.id
   url      = data.coder_parameter.repo_url.value
-  base_dir = "~"
+  base_dir = "~/projects"
   version  = "~> 1.0"
 }
 
@@ -331,7 +344,7 @@ resource "coder_script" "lifecycle_init" {
 
     [ -x /usr/local/bin/home-persist-resolve ]          && /usr/local/bin/home-persist-resolve
     [ -x /usr/local/share/context-mode/post-create.sh ] && /usr/local/share/context-mode/post-create.sh
-    [ -x /usr/local/share/rtk/post-create.sh ]          && /usr/local/share/rtk/post-create.sh
+    [ -x "$HOME/.local/share/rtk/post-create.sh" ]      && "$HOME/.local/share/rtk/post-create.sh"
     exit 0
   EOT
 }
@@ -362,10 +375,12 @@ resource "docker_volume" "docker_data" {
   }
 }
 
-# Per-workspace $HOME volume. Persists user data (~/.bashrc tweaks, cloned
-# repo, build artefacts) across workspace restarts.
-resource "docker_volume" "home_volume" {
-  name = "coder-${data.coder_workspace.me.id}-home"
+# Per-workspace projects volume. Cloned repos + work-in-progress live here
+# so they survive workspace restarts. $HOME itself is image-owned and resets
+# each start; per-owner state that must persist outside projects goes through
+# home-persist (see docs/persistence.md).
+resource "docker_volume" "projects_volume" {
+  name = "coder-${data.coder_workspace.me.id}-projects"
   lifecycle {
     ignore_changes = all
   }
@@ -418,8 +433,8 @@ resource "docker_container" "workspace" {
   }
 
   volumes {
-    container_path = local.workspace_home
-    volume_name    = docker_volume.home_volume.name
+    container_path = "${local.workspace_home}/projects"
+    volume_name    = docker_volume.projects_volume.name
     read_only      = false
   }
 

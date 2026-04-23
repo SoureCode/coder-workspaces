@@ -6,26 +6,6 @@ set -e
 LLVM_VERSION="${VERSION:-22}"
 LLVM_ALL="${ALL:-true}"
 
-# llvm.sh writes the LLVM apt source in deb822 format on trixie/forky/sid, so
-# software-properties-common (gone from trixie) is no longer required there.
-# Older Debian/Ubuntu suites still need add-apt-repository, which lives in
-# software-properties-common. Detect the suite and preinstall accordingly.
-PKGS=(ca-certificates curl gnupg lsb-release wget)
-. /etc/os-release
-case "${VERSION_CODENAME:-}" in
-  trixie|forky|sid) ;;
-  *) PKGS+=(software-properties-common) ;;
-esac
-NEED=()
-for pkg in "${PKGS[@]}"; do
-  dpkg -s "$pkg" >/dev/null 2>&1 || NEED+=("$pkg")
-done
-if [ "${#NEED[@]}" -gt 0 ]; then
-  apt-get update
-  apt-get install -y --no-install-recommends "${NEED[@]}"
-  rm -rf /var/lib/apt/lists/*
-fi
-
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
