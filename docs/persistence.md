@@ -54,6 +54,33 @@ opt in.
    the first create on an empty volume leaves `~/.claude` as a dangling
    symlink, and any consumer doing `mkdir -p ~/.claude` fails with EEXIST.
 
+   **Scope** (optional, default `"owner"`): which workspaces share the
+   persisted copy.
+
+   - `"owner"` — one copy under `/mnt/home-persist/<rel>`, visible to every
+     workspace the owner runs. Right for settings, credentials, anything
+     you want synced across workspaces.
+   - `"workspace"` — one copy per workspace under
+     `/mnt/home-persist/.workspaces/<CODER_WORKSPACE_ID>/<rel>`, private to
+     that workspace but surviving its stop/start. Required for paths with
+     single-writer semantics (lock files, unix sockets, per-project
+     indexes) — otherwise two concurrent workspaces race and one fails.
+
+   ```json
+   {
+     "source": "jetbrains-local",
+     "scope": "workspace",
+     "paths": [".cache/JetBrains/"]
+   }
+   ```
+
+   **Sibling rule**: owner-scoped and workspace-scoped paths must not nest
+   under each other. A path symlinked at the parent already points into the
+   shared volume; a child symlink would land inside that target and leak
+   per-workspace state into the shared store. Declare them as siblings at
+   the appropriate XDG roots (`.config/`, `.local/share/`, `.cache/`) — that
+   split is almost always the right line anyway.
+
 3. **The resolver.** `main.tf`'s `coder_script.lifecycle_init` invokes
    `/usr/local/bin/home-persist-resolve` at agent start, with
    `start_blocks_login = true` so IDEs don't connect before the symlinks are
@@ -77,12 +104,18 @@ opt in.
 │                                                                 │
 │   docker volume: coder-<owner>-home-persist  ◄── one per owner  │
 │     │                                                           │
-│     ├─► workspace A at /mnt/home-persist                        │
-│     │     └─► symlinks from $HOME into it                       │
-│     ├─► workspace B at /mnt/home-persist                        │
-│     │     └─► symlinks from $HOME into it                       │
-│     └─► workspace C at /mnt/home-persist                        │
-│           └─► symlinks from $HOME into it                       │
+│     ├─ owner-scoped paths (shared)                              │
+│     │   .config/…   .local/share/…   .claude/   …               │
+│     │                                                           │
+│     └─ .workspaces/<CODER_WORKSPACE_ID>/   workspace-scoped     │
+│         ├─ <id-A>/  .cache/JetBrains/  …    (private to ws A)   │
+│         ├─ <id-B>/  .cache/JetBrains/  …    (private to ws B)   │
+│         └─ <id-C>/  .cache/JetBrains/  …    (private to ws C)   │
+│                                                                 │
+│   workspace A mounts /mnt/home-persist                          │
+│     └─► $HOME/.config/JetBrains → /mnt/home-persist/.config/... │
+│     └─► $HOME/.cache/JetBrains  → /mnt/home-persist/.workspaces │
+│                                     /<ws-A-id>/.cache/JetBrains │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -100,10 +133,11 @@ Properties that fall out:
 
 ## What's declared today
 
-| Source        | Paths                         | Why                                  |
-| ------------- | ----------------------------- | ------------------------------------ |
-| `claude-code` | `.claude/`, `.claude.json`    | Login credentials, sessions, plugins |
-| `jetbrains`   | `.cache/JetBrains/`, `.config/JetBrains/`, `.local/share/JetBrains/`, `.java/.userPrefs/jetbrains/` | The workspace is headless — Toolbox/Gateway runs on the user's local machine. Clicking the IDE button opens a `jetbrains-gateway://` URL; Gateway SSHes in and has `remote-dev-server.sh` download the IDE backend into `~/.cache/JetBrains/RemoteDev/dist/` on first connect (hundreds of MB per IDE). The three JetBrains roots keep the downloaded backend plus per-IDE `RemoteDev-<Code>/` settings, plugins, and project indexes. `.java/.userPrefs/jetbrains/` is the Java `Preferences` store the IDEs use for JetBrains Account / JetProfile login, license activation, and non-commercial-license acceptance — persisting it avoids re-login on every restart. |
+| Source            | Scope       | Paths                         | Why                                  |
+| ----------------- | ----------- | ----------------------------- | ------------------------------------ |
+| `claude-code`     | owner       | `.claude/`, `.claude.json`    | Login credentials, sessions, plugins |
+| `jetbrains`       | owner       | `.config/JetBrains/`, `.local/share/JetBrains/`, `.java/.userPrefs/jetbrains/` | Settings, plugins, and JetProfile state that should follow the user across workspaces. Keymaps, color schemes, installed plugins, license acceptance. |
+| `jetbrains-local` | workspace   | `.cache/JetBrains/` | Per-workspace runtime: the SSH-deployed Toolbox Agent (`Toolbox-CLI-dist/`), its IPC lock and unix socket under `Toolbox/ports/`, the downloaded IDE backend (`RemoteDev/dist/`), and per-IDE system caches and project indexes. Must be per-workspace — concurrent workspaces that share `.cache/JetBrains/` race on the Toolbox Agent's `UnixApplicationStartLock` and fail to connect ("main instance is alive, cannot bind twice"). |
 
 Anything not declared is image-owned (or per-workspace-home-volume-owned)
 and resets on image rebuild — git config, SSH keys, bash history, caches.
@@ -154,6 +188,24 @@ EOF
 
 Trailing `/` for directories, no slash for files.
 
+If any of those paths must not be shared between concurrent workspaces (lock
+files, sockets, per-project indexes), split them into a second manifest with
+`"scope": "workspace"`:
+
+```bash
+cat > /etc/home-persist.d/my-tool-local.json <<'EOF'
+{
+  "source": "my-tool-local",
+  "scope": "workspace",
+  "paths": [".cache/my-tool/"]
+}
+EOF
+```
+
+Keep the owner and workspace paths as siblings (see the sibling rule in
+"The manifest" above) — don't declare a parent owner-scoped and then try to
+carve a child out as workspace-scoped.
+
 No install ordering required — `home-persist-resolve` runs at agent start,
 after the image is already built with every script's manifest in place.
 Listing the same path in two manifests is harmless: the second is logged
@@ -178,6 +230,37 @@ One volume per owner means:
 
 - One Claude Code login reused across every workspace the owner opens.
 - Two workspaces running simultaneously means two processes writing to the
-  same files in the volume. For credential files and config this is fine;
-  for anything with single-writer semantics, same caveats as any shared
-  home. Add the path only if you actually want it shared.
+  same owner-scoped files in the volume. For credential files and config
+  this is fine; for anything with single-writer semantics (lock files,
+  unix sockets, indexes), declare the path with `"scope": "workspace"` so
+  each workspace gets its own copy under `.workspaces/<id>/`.
+
+When a workspace is deleted, its `.workspaces/<id>/` subtree is orphaned —
+nothing sweeps it automatically. Clean up manually from any running
+workspace if disk usage grows:
+
+```bash
+ls /mnt/home-persist/.workspaces/
+rm -rf /mnt/home-persist/.workspaces/<stale-id>
+```
+
+## Migrating an owner-scoped path to workspace-scoped
+
+Flipping a path from `scope: "owner"` to `scope: "workspace"` leaves the old
+`/mnt/home-persist/<path>` dir behind — the resolver retargets the symlink
+but doesn't touch the previous target. Tens to hundreds of MB can accumulate
+(JetBrains caches, Docker-ish state, etc.).
+
+Add a `migration_sweep` line to `coder_script.lifecycle_init` in `main.tf`,
+keyed by a unique sentinel name:
+
+```bash
+migration_sweep <sentinel-name> <path-relative-to-/mnt/home-persist>
+# e.g.
+migration_sweep jetbrains-cache-owner-to-workspace .cache/JetBrains
+```
+
+The sweep runs once per owner volume (the sentinel
+`/mnt/home-persist/.workspaces/.migrated/<sentinel-name>` blocks reruns) and
+is a no-op if the orphan is already gone. Delete the line from `main.tf`
+once every workspace has cycled past it.

@@ -7,7 +7,21 @@
 # volume wins. Idempotent.
 #
 # Manifest shape:
-#   { "source": "<label>", "paths": ["<rel-to-$HOME>", ...] }
+#   { "source": "<label>", "scope": "owner"|"workspace", "paths": [...] }
+#
+# scope (default "owner"):
+#   - "owner"     — target is $STATE/<rel>, shared across all the owner's
+#                   workspaces (existing behavior).
+#   - "workspace" — target is $STATE/.workspaces/$CODER_WORKSPACE_ID/<rel>,
+#                   private to this workspace. Requires CODER_WORKSPACE_ID;
+#                   the manifest is skipped with a warning otherwise.
+#                   Use for paths with single-writer semantics (lock files,
+#                   unix sockets, per-IDE indexes) that collide when two
+#                   workspaces share them.
+#
+# Owner and workspace paths must be siblings, not parent/child: a path
+# symlinked at the parent cannot have a child symlinked underneath it (the
+# child would land inside the parent's target and pollute the shared volume).
 #
 # Path convention:
 #   - Trailing slash ("/") means the path is a directory. The target is
@@ -50,6 +64,25 @@ for mf in "${manifests[@]}"; do
     continue
   fi
   source=$(jq -r '.source // "unknown"' "$mf")
+  scope=$(jq -r '.scope // "owner"' "$mf")
+
+  case "$scope" in
+    owner)
+      scope_root="$STATE"
+      ;;
+    workspace)
+      if [ -z "${CODER_WORKSPACE_ID:-}" ]; then
+        log "skipping $mf: scope=workspace but CODER_WORKSPACE_ID is unset"
+        continue
+      fi
+      scope_root="$STATE/.workspaces/$CODER_WORKSPACE_ID"
+      mkdir -p "$scope_root"
+      ;;
+    *)
+      log "skipping $mf: unknown scope '$scope' (expected owner|workspace)"
+      continue
+      ;;
+  esac
 
   while IFS= read -r raw; do
     [ -z "$raw" ] && continue
@@ -70,7 +103,7 @@ for mf in "${manifests[@]}"; do
     owner[$rel]="$source"
 
     link="$HOME/$rel"
-    target="$STATE/$rel"
+    target="$scope_root/$rel"
     mkdir -p "$(dirname "$target")" "$(dirname "$link")"
 
     if [ -e "$link" ] && [ ! -L "$link" ]; then

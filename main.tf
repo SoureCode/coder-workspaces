@@ -99,6 +99,15 @@ resource "coder_agent" "main" {
   os   = "linux"
   dir  = data.coder_parameter.directory.value
 
+  # Workspace identity is exposed to shells and coder_script blocks so
+  # home-persist-resolve can scope per-workspace paths under
+  # /mnt/home-persist/.workspaces/$CODER_WORKSPACE_ID/. Name is informational
+  # (renameable); ID is the stable key.
+  env = {
+    CODER_WORKSPACE_NAME = data.coder_workspace.me.name
+    CODER_WORKSPACE_ID   = data.coder_workspace.me.id
+  }
+
   startup_script = <<-EOT
     set -e
 
@@ -301,6 +310,23 @@ resource "coder_script" "lifecycle_init" {
         jq -n --argjson paths "$paths_json" '{source:"user",paths:$paths}' \
           | sudo tee /etc/home-persist.d/user.json >/dev/null
       fi
+    fi
+
+    # One-shot migration sweeps. Each entry removes an owner-scoped path that
+    # has since been moved to scope=workspace. Gated by a sentinel on the
+    # shared volume so only the first workspace to cycle after the switch
+    # pays the cost; subsequent workspaces see the sentinel and skip. Safe
+    # to delete a migration block once every owner has cycled past it.
+    migration_sweep() {
+      sentinel="/mnt/home-persist/.workspaces/.migrated/$1"
+      orphan="/mnt/home-persist/$2"
+      [ -f "$sentinel" ] && return
+      [ -e "$orphan" ] && rm -rf "$orphan"
+      mkdir -p "$(dirname "$sentinel")"
+      touch "$sentinel"
+    }
+    if [ -w /mnt/home-persist ]; then
+      migration_sweep jetbrains-cache-owner-to-workspace .cache/JetBrains
     fi
 
     [ -x /usr/local/bin/home-persist-resolve ]          && /usr/local/bin/home-persist-resolve
