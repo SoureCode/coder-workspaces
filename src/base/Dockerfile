@@ -31,7 +31,7 @@ RUN apt-get update && \
         bash build-essential ca-certificates containerd.io curl docker-ce docker-ce-cli \
         docker-buildx-plugin docker-compose-plugin dtach file git gnupg \
         htop iproute2 iputils-ping jq less locales lsb-release lsof \
-        man-db openssh-client pipx procps python3 python3-pip rsync strace \
+        man-db openssh-client pipx pkg-config procps python3 python3-pip rsync strace \
         sudo systemd systemd-sysv tar tree unzip vim wget && \
     rm -rf /var/lib/apt/lists/*
 
@@ -85,6 +85,8 @@ RUN --mount=type=bind,source=scripts/context-mode,target=/scripts/context-mode \
     bash /scripts/context-mode/install.sh
 RUN --mount=type=bind,source=scripts/home-persist,target=/scripts/home-persist \
     bash /scripts/home-persist/install.sh
+RUN --mount=type=bind,source=scripts/icu,target=/scripts/icu \
+    bash /scripts/icu/install.sh
 RUN --mount=type=bind,source=scripts/jetbrains,target=/scripts/jetbrains \
     bash /scripts/jetbrains/install.sh
 
