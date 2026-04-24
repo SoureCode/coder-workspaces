@@ -87,6 +87,8 @@ RUN --mount=type=bind,source=scripts/home-persist,target=/scripts/home-persist \
     bash /scripts/home-persist/install.sh
 RUN --mount=type=bind,source=scripts/icu,target=/scripts/icu \
     bash /scripts/icu/install.sh
+RUN --mount=type=bind,source=scripts/gh,target=/scripts/gh \
+    bash /scripts/gh/install.sh
 RUN --mount=type=bind,source=scripts/jetbrains,target=/scripts/jetbrains \
     bash /scripts/jetbrains/install.sh
 
@@ -97,6 +99,8 @@ RUN --mount=type=bind,source=scripts/nvm,target=/scripts/nvm \
     bash /scripts/nvm/install.sh
 RUN --mount=type=bind,source=scripts/claude-code,target=/scripts/claude-code \
     bash /scripts/claude-code/install.sh
+RUN --mount=type=bind,source=scripts/copilot,target=/scripts/copilot \
+    bash /scripts/copilot/install.sh
 RUN --mount=type=bind,source=scripts/rtk,target=/scripts/rtk \
     bash /scripts/rtk/install.sh
 RUN --mount=type=bind,source=scripts/web-shell,target=/scripts/web-shell \
