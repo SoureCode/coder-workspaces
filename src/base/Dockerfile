@@ -32,7 +32,7 @@ RUN apt-get update && \
         docker-buildx-plugin docker-compose-plugin dtach file git gnupg \
         htop iproute2 iputils-ping jq less locales lsb-release lsof \
         man-db openssh-client pipx pkg-config procps python3 python3-pip rsync strace \
-        sudo systemd systemd-sysv tar tree unzip vim wget && \
+        sudo systemd systemd-sysv tar tree unzip vim wget bubblewrap && \
     rm -rf /var/lib/apt/lists/*
 
 # Pre-populate system known_hosts for common git forges so SSH clones don't
