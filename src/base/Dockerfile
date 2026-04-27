@@ -32,7 +32,9 @@ RUN apt-get update && \
         docker-buildx-plugin docker-compose-plugin dtach file git gnupg \
         htop iproute2 iputils-ping jq less locales lsb-release lsof \
         man-db openssh-client pipx pkg-config procps python3 python3-pip rsync strace \
-        sudo systemd systemd-sysv tar tree unzip vim wget bubblewrap && \
+        sudo systemd systemd-sysv tar tree unzip vim wget bubblewrap \
+        libnss3 libnspr4 libglib2.0-0 libatk1.0-dev libatk-bridge2.0-0 \ 
+        libxcomposite-dev libxdamage-dev libxrandr-dev libxkbcommon-dev libasound-dev && \
     rm -rf /var/lib/apt/lists/*
 
 # Pre-populate system known_hosts for common git forges so SSH clones don't
@@ -108,6 +110,12 @@ RUN --mount=type=bind,source=scripts/web-shell,target=/scripts/web-shell \
 RUN --mount=type=bind,source=scripts/codex,target=/scripts/codex \
     bash /scripts/codex/install.sh
 USER root
+
+# Register non-standard tool paths in /etc/environment so systemd-spawned
+# processes (web-shell.service, coder-agent.service) see them without a login shell.
+RUN sed -i '/^PATH=/d' /etc/environment 2>/dev/null || true && \
+    printf 'PATH="/home/coder/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"\n' \
+        >> /etc/environment
 
 # Coder agent: systemd unit runs /etc/coder/agent-init.sh as the workspace
 # user after dockerd is up. The script itself is uploaded at container-create

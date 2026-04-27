@@ -9,15 +9,6 @@ if [ ! -x "$HOME/.local/bin/claude" ]; then
   exit 1
 fi
 
-# PATH hook in ~/.profile — if-check at source time only prepends
-# $HOME/.local/bin when it's not already in $PATH.
-cat >> "$HOME/.profile" <<EOF
-
-if ! echo ":\$PATH:" | grep -q ":\$HOME/.local/bin:"; then
-  export PATH="\$HOME/.local/bin:\$PATH"
-fi
-EOF
-
 # Declare the HOME paths Claude Code needs persisted. The home-persist
 # resolver reads every /etc/home-persist.d/*.json at workspace start and
 # symlinks these into /mnt/home-persist. /etc/home-persist.d is root-owned.

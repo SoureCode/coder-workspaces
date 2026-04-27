@@ -24,8 +24,8 @@ curl -fsSL -o "$TMPDIR/go.tar.gz" \
 rm -rf /usr/local/go
 tar -C /usr/local -xzf "$TMPDIR/go.tar.gz"
 
-ln -sf /usr/local/go/bin/go /usr/local/bin/go
-ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+existing_path="$(sed -n 's/^PATH="\(.*\)"/\1/p' /etc/environment 2>/dev/null || echo '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin')"
+sed -i '/^PATH=/d' /etc/environment 2>/dev/null || true
+printf 'PATH="/usr/local/go/bin:%s"\n' "$existing_path" >> /etc/environment
 
-printf 'export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"\n' \
-  > /etc/profile.d/go.sh
+printf 'export PATH="$HOME/go/bin:$PATH"\n' > /etc/profile.d/go.sh
