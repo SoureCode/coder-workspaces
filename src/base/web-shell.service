@@ -8,6 +8,7 @@ Type=simple
 User=coder
 Group=coder
 WorkingDirectory=/home/coder
+EnvironmentFile=/etc/environment
 EnvironmentFile=-/etc/default/web-shell
 Environment=HOST=127.0.0.1
 Environment=PORT=4000

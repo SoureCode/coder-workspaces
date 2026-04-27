@@ -75,7 +75,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        stack: [node, cpp, php, go]
+        stack: [node, cpp, php, go, go-php]
     steps:
       - uses: actions/checkout@v6
 

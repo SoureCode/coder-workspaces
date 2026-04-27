@@ -117,6 +117,11 @@ RUN sed -i '/^PATH=/d' /etc/environment 2>/dev/null || true && \
     printf 'PATH="/home/coder/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"\n' \
         >> /etc/environment
 
+# Source profile.d in non-login interactive shells so tool PATH entries in
+# /etc/profile.d/*.sh are available regardless of how bash is invoked.
+RUN printf '\nif [ -d /etc/profile.d ]; then\n  for i in /etc/profile.d/*.sh; do\n    [ -r "$i" ] && . "$i"\n  done\n  unset i\nfi\n' \
+        >> /etc/bash.bashrc
+
 # Coder agent: systemd unit runs /etc/coder/agent-init.sh as the workspace
 # user after dockerd is up. The script itself is uploaded at container-create
 # time by the Terraform template (kreuzwerker/docker `upload` block).
