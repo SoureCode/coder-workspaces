@@ -26,7 +26,8 @@ locals {
     node = "ghcr.io/sourecode/coder-workspace:node"
     cpp  = "ghcr.io/sourecode/coder-workspace:cpp"
     php  = "ghcr.io/sourecode/coder-workspace:php"
-    go   = "ghcr.io/sourecode/coder-workspace:go"
+    go     = "ghcr.io/sourecode/coder-workspace:go"
+    go-php = "ghcr.io/sourecode/coder-workspace:go-php"
   }
 
   git_author_name            = coalesce(data.coder_workspace_owner.me.full_name, data.coder_workspace_owner.me.name)
@@ -60,6 +61,10 @@ data "coder_parameter" "workspace_image" {
   option {
     name  = "go — base + Go (latest stable)"
     value = "go"
+  }
+  option {
+    name  = "go-php — base + Go (latest stable) + Sury PHP (default 8.5) + composer + symfony-cli + frankenphp + pvm"
+    value = "go-php"
   }
 }
 
