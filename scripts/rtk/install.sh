@@ -23,5 +23,15 @@ fi
 
 mkdir -p "$HOME/.claude"
 rtk init -g --auto-patch
+rtk init -g --codex
 EOF
 chmod 0755 "$HOME/.local/share/rtk/post-create.sh"
+
+sudo mkdir -p /etc/home-persist.d
+sudo tee /etc/home-persist.d/rtk.json >/dev/null <<'EOF'
+{
+  "source": "rtk",
+  "paths": [".config/rtk/", ".local/share/rtk/history.db"]
+}
+EOF
+
