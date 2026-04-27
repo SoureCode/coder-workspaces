@@ -24,5 +24,8 @@ curl -fsSL -o "$TMPDIR/go.tar.gz" \
 rm -rf /usr/local/go
 tar -C /usr/local -xzf "$TMPDIR/go.tar.gz"
 
+ln -sf /usr/local/go/bin/go /usr/local/bin/go
+ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+
 printf 'export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"\n' \
   > /etc/profile.d/go.sh
