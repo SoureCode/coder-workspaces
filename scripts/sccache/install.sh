@@ -3,7 +3,7 @@
 # https://github.com/mozilla/sccache
 set -e
 
-SCCACHE_VERSION="${VERSION:-latest}"
+SCCACHE_VERSION="${SCCACHE_VERSION:-latest}"
 
 if [ "$SCCACHE_VERSION" = "latest" ]; then
   SCCACHE_VERSION="$(curl -fsSL https://api.github.com/repos/mozilla/sccache/releases/latest \

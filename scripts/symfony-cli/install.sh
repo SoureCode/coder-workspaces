@@ -4,7 +4,7 @@
 # https://github.com/symfony-cli/symfony-cli
 set -e
 
-SF_VERSION_OPT="${VERSION:-latest}"
+SF_VERSION_OPT="${SYMFONY_VERSION:-latest}"
 INSTALL_DIR="$HOME/.local/bin"
 mkdir -p "$INSTALL_DIR"
 

@@ -105,6 +105,8 @@ RUN --mount=type=bind,source=scripts/rtk,target=/scripts/rtk \
     bash /scripts/rtk/install.sh
 RUN --mount=type=bind,source=scripts/web-shell,target=/scripts/web-shell \
     bash /scripts/web-shell/install.sh
+RUN --mount=type=bind,source=scripts/codex,target=/scripts/codex \
+    bash /scripts/codex/install.sh
 USER root
 
 # Coder agent: systemd unit runs /etc/coder/agent-init.sh as the workspace

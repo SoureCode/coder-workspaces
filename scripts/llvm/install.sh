@@ -3,7 +3,7 @@
 # https://apt.llvm.org/
 set -e
 
-LLVM_VERSION="${VERSION:-22}"
+LLVM_VERSION="${LLVM_VERSION:-22}"
 LLVM_ALL="${ALL:-true}"
 
 TMPDIR="$(mktemp -d)"

@@ -3,7 +3,7 @@
 # https://cmake.org/
 set -e
 
-CMAKE_VERSION="${VERSION:-latest}"
+CMAKE_VERSION="${CMAKE_VERSION:-latest}"
 
 if [ "$CMAKE_VERSION" = "latest" ]; then
   CMAKE_VERSION="$(curl -fsSL https://api.github.com/repos/Kitware/CMake/releases/latest \

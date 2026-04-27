@@ -7,7 +7,7 @@
 # https://deb.sury.org/
 set -e
 
-PHP_DEFAULT_VERSION="${VERSION:-8.5}"
+PHP_DEFAULT_VERSION="${PHP_VERSION:-8.5}"
 # Extensions installed for every version (Sury naming, prefixed at use-site).
 # `common` pulls pdo/phar; `mysql`/`pgsql`/`sqlite3` include their pdo drivers.
 PHP_EXT_SET="cli common curl mbstring xml intl zip gd bcmath opcache apcu mysql pgsql sqlite3 redis xdebug"

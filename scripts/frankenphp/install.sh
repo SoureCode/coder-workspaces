@@ -5,7 +5,7 @@
 # https://github.com/dunglas/frankenphp
 set -e
 
-FP_VERSION_OPT="${VERSION:-latest}"
+FP_VERSION_OPT="${FRANKENPHP_VERSION:-latest}"
 INSTALL_DIR="$HOME/.local/bin"
 mkdir -p "$INSTALL_DIR"
 

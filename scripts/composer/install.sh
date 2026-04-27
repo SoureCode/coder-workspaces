@@ -5,7 +5,7 @@
 # https://getcomposer.org/
 set -e
 
-COMPOSER_VERSION="${VERSION:-}"
+COMPOSER_VERSION="${COMPOSER_VERSION:-}"
 INSTALL_DIR="$HOME/.local/bin"
 mkdir -p "$INSTALL_DIR"
 

@@ -4,7 +4,7 @@
 # https://github.com/nvm-sh/nvm
 set -e
 
-NVM_VERSION="${VERSION:-0.40.4}"
+NVM_VERSION="${NVM_VERSION:-0.40.4}"
 NODE_VERSION="${NODE:-lts}"
 
 curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/v${NVM_VERSION}/install.sh" \

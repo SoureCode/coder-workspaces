@@ -9,7 +9,7 @@
 # https://github.com/unicode-org/icu
 set -euo pipefail
 
-ICU_VERSION="${VERSION:-latest}"
+ICU_VERSION="${ICU_VERSION:-latest}"
 
 if [ "$ICU_VERSION" = "latest" ]; then
   TAG="$(curl -fsSL https://api.github.com/repos/unicode-org/icu/releases/latest \
