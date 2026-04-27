@@ -19,6 +19,10 @@ on:
     types: [completed]
   workflow_dispatch:
 
+concurrency:
+  group: push-template
+  cancel-in-progress: true
+
 jobs:
   push:
     # workflow_run fires on any conclusion; gate on success. Direct push and
@@ -59,7 +63,7 @@ jobs:
       - name: Push template version
         run: |
           set -euo pipefail
-          version_name="$(git rev-parse --short HEAD)"
+          version_name="$(git rev-parse --short HEAD)-${{ github.run_number }}"
           commit_msg="$(git log -1 --format=%B HEAD)"
           coder templates push "$TEMPLATE_NAME" \
             --directory "$RUNNER_TEMP/coder-template" \
