@@ -7,7 +7,7 @@
 # the mountpoints here so coder-agent.service — which starts later under
 # systemd — sees correctly-owned mounts. Idempotent: chown/chmod are no-ops
 # when values already match.
-set -e
+set -eo pipefail
 
 USERNAME="${USERNAME:-coder}"
 

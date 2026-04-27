@@ -8,7 +8,7 @@
 # list; falls back to locally-packaged Sury versions if php.net is
 # unreachable. PHP has no official LTS — 'lts' is our convention for
 # "oldest branch still in security support" (longest-lived pin).
-set -e
+set -eo pipefail
 
 EXT_SET="cli common curl mbstring xml intl zip gd bcmath opcache apcu mysql pgsql sqlite3 redis xdebug"
 USER_BIN="$HOME/.local/bin"

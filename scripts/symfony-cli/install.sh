@@ -2,7 +2,7 @@
 # symfony-cli installer. Runs as the workspace user — prebuilt tarball from
 # GitHub releases into $HOME/.local/bin.
 # https://github.com/symfony-cli/symfony-cli
-set -e
+set -eo pipefail
 
 SF_VERSION_OPT="${SYMFONY_VERSION:-latest}"
 INSTALL_DIR="$HOME/.local/bin"
@@ -37,3 +37,6 @@ if ! "$INSTALL_DIR/symfony" version >/dev/null 2>&1; then
   echo "symfony-cli: binary not runnable after install." >&2
   exit 1
 fi
+
+mkdir -p "$HOME/.local/share/bash-completion/completions"
+"$INSTALL_DIR/symfony" completion bash > "$HOME/.local/share/bash-completion/completions/symfony"

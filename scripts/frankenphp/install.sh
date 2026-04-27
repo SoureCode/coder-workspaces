@@ -3,7 +3,7 @@
 # from GitHub releases into $HOME/.local/bin. FrankenPHP is a modern PHP
 # app server (Caddy + PHP embedded).
 # https://github.com/dunglas/frankenphp
-set -e
+set -eo pipefail
 
 FP_VERSION_OPT="${FRANKENPHP_VERSION:-latest}"
 INSTALL_DIR="$HOME/.local/bin"

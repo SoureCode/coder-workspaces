@@ -4,7 +4,7 @@
 # claude-code's .profile hook). Requires an active Copilot subscription at
 # runtime; the install itself needs no auth.
 # https://gh.io/copilot-install
-set -e
+set -eo pipefail
 
 curl -fsSL https://gh.io/copilot-install | bash
 

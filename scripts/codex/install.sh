@@ -2,7 +2,7 @@
 # codex installer. Runs as the workspace user — npm install -g goes into
 # the user's own nvm prefix ($HOME/.nvm/versions/node/<v>/bin).
 # https://github.com/openai/codex
-set -e
+set -eo pipefail
 
 CODEX_VERSION_OPT="${CODEX_VERSION:-latest}"
 

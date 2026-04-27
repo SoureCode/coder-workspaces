@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # cmake installer. Runs as the workspace user — binaries land in $HOME/.local/.
 # https://cmake.org/
-set -e
+set -eo pipefail
 
 CMAKE_VERSION="${CMAKE_VERSION:-latest}"
 

@@ -3,7 +3,7 @@
 # $HOME/.local/bin (on PATH via pipx ensurepath in base). Verified against
 # the SHA-384 that the official Composer installer script publishes.
 # https://getcomposer.org/
-set -e
+set -eo pipefail
 
 COMPOSER_VERSION="${COMPOSER_VERSION:-}"
 INSTALL_DIR="$HOME/.local/bin"
@@ -33,3 +33,6 @@ if ! "$INSTALL_DIR/composer" --version >/dev/null 2>&1; then
   echo "composer: binary not runnable after install." >&2
   exit 1
 fi
+
+mkdir -p "$HOME/.local/share/bash-completion/completions"
+"$INSTALL_DIR/composer" completion bash > "$HOME/.local/share/bash-completion/completions/composer"

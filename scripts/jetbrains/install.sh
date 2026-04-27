@@ -37,7 +37,7 @@
 # across concurrent workspaces ("main instance is alive, cannot bind twice").
 # Settings, plugins, and JetProfile state stay owner-scoped so they follow
 # the user across workspaces.
-set -e
+set -eo pipefail
 
 mkdir -p /etc/home-persist.d
 

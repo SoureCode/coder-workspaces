@@ -5,7 +5,7 @@
 # via symlinks under $HOME/.local/bin (no sudo needed to switch).
 # `pvm install <ver>` adds more versions from Sury on demand.
 # https://deb.sury.org/
-set -e
+set -eo pipefail
 
 PHP_DEFAULT_VERSION="${PHP_VERSION:-8.5}"
 # Extensions installed for every version (Sury naming, prefixed at use-site).

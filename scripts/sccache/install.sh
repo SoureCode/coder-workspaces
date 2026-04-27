@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # sccache installer. Runs as the workspace user — binary lands in $HOME/.local/bin.
 # https://github.com/mozilla/sccache
-set -e
+set -eo pipefail
 
 SCCACHE_VERSION="${SCCACHE_VERSION:-latest}"
 

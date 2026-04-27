@@ -7,7 +7,7 @@
 # created at workspace start by home-persist-resolve — which runs after this
 # install.sh. Defer the plugin install to workspace start (via coder_script)
 # so it writes through the symlink into the persistent volume on every start.
-set -e
+set -eo pipefail
 
 mkdir -p /usr/local/share/context-mode
 cat >/usr/local/share/context-mode/post-create.sh <<'EOF'
@@ -15,7 +15,7 @@ cat >/usr/local/share/context-mode/post-create.sh <<'EOF'
 # Written at image build time. Runs as the remote user via a coder_script at
 # workspace start, after home-persist-resolve has symlinked ~/.claude into
 # the persistence volume.
-set -e
+set -eo pipefail
 
 if ! command -v claude >/dev/null 2>&1; then
   echo "context-mode: claude CLI not on PATH, skipping plugin install. Claude Code must be installed in the workspace image." >&2

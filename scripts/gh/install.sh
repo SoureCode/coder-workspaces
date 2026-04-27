@@ -2,7 +2,7 @@
 # GitHub CLI installer. Runs as root. Adds cli.github.com's apt repo and
 # installs gh system-wide — the upstream-recommended path on Debian.
 # https://github.com/cli/cli/blob/trunk/docs/install_linux.md
-set -e
+set -eo pipefail
 
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
@@ -15,6 +15,8 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubc
 apt-get update
 apt-get install -y --no-install-recommends --no-install-suggests gh
 rm -rf /var/lib/apt/lists/*
+
+gh completion -s bash > /etc/bash_completion.d/gh
 
 # Persist gh config + extensions across workspace rebuilds. ~/.config/gh
 # holds config.yml and hosts.yml (auth tokens); ~/.local/share/gh holds

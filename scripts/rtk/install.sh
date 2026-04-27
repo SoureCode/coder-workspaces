@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # rtk installer. Runs as the workspace user — binary lands in $HOME/.local/bin.
 # https://github.com/rtk-ai/rtk
-set -e
+set -eo pipefail
 
 curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
 
@@ -14,7 +14,7 @@ mkdir -p "$HOME/.local/share/rtk"
 cat >"$HOME/.local/share/rtk/post-create.sh" <<'EOF'
 #!/usr/bin/env bash
 # Runs as the remote user via a coder_script at workspace start.
-set -e
+set -eo pipefail
 
 if ! command -v claude >/dev/null 2>&1; then
   echo "rtk: claude CLI not on PATH, skipping auto-patch. Claude Code must be installed in the workspace image." >&2

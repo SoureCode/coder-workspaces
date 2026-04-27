@@ -7,7 +7,7 @@
 # main.tf — this installer only places the binary. Bind address is always
 # 127.0.0.1 and auth is disabled; web-shell is reached via Coder's reverse
 # proxy, which gates access with Coder auth.
-set -e
+set -eo pipefail
 
 WS_VERSION_OPT="${WEB_SHELL_VERSION:-0.8.0}"
 

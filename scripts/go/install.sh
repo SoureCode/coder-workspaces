@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Go installer — installs to /usr/local/go (system-wide).
-set -e
+set -eo pipefail
 
 GO_VERSION="${GO_VERSION:-latest}"
 
@@ -24,8 +24,9 @@ curl -fsSL -o "$TMPDIR/go.tar.gz" \
 rm -rf /usr/local/go
 tar -C /usr/local -xzf "$TMPDIR/go.tar.gz"
 
-existing_path="$(sed -n 's/^PATH="\(.*\)"/\1/p' /etc/environment 2>/dev/null || echo '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin')"
-sed -i '/^PATH=/d' /etc/environment 2>/dev/null || true
+existing_path="$(sed -n 's/^PATH="\(.*\)"/\1/p' /etc/environment)"
+[ -n "$existing_path" ] || { echo "go: PATH not found in /etc/environment" >&2; exit 1; }
+sed -i '/^PATH=/d' /etc/environment
 printf 'PATH="/usr/local/go/bin:%s"\n' "$existing_path" >> /etc/environment
 
 printf 'export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"\n' > /etc/profile.d/go.sh

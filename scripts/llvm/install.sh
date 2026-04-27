@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # llvm installer (uses apt.llvm.org's llvm.sh).
 # https://apt.llvm.org/
-set -e
+set -eo pipefail
 
 LLVM_VERSION="${LLVM_VERSION:-22}"
 LLVM_ALL="${ALL:-true}"

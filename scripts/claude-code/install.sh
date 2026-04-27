@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # claude-code installer. Runs as the workspace user (see src/base/Dockerfile).
-set -e
+set -eo pipefail
 
 curl -fsSL https://claude.ai/install.sh | bash
 

@@ -28,7 +28,7 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
 # Baseline packages + Docker engine.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
-        bash build-essential ca-certificates containerd.io curl docker-ce docker-ce-cli \
+        bash bash-completion build-essential ca-certificates containerd.io curl docker-ce docker-ce-cli \
         docker-buildx-plugin docker-compose-plugin dtach file git gnupg \
         htop iproute2 iputils-ping jq less locales lsb-release lsof \
         man-db openssh-client pipx pkg-config procps python3 python3-pip rsync strace \
@@ -113,9 +113,12 @@ USER root
 
 # Register non-standard tool paths in /etc/environment so systemd-spawned
 # processes (web-shell.service, coder-agent.service) see them without a login shell.
-RUN sed -i '/^PATH=/d' /etc/environment 2>/dev/null || true && \
-    printf 'PATH="/home/coder/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"\n' \
-        >> /etc/environment
+RUN node_bin_dir="$(su -s /bin/bash "${_REMOTE_USER}" -c \
+        'export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh" >/dev/null 2>&1; dirname "$(nvm which default)"')" && \
+    [ -n "$node_bin_dir" ] || { echo "ERROR: nvm default node not found"; exit 1; } && \
+    sed -i '/^PATH=/d' /etc/environment 2>/dev/null || true && \
+    printf 'PATH="%s:/home/coder/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"\n' \
+        "${node_bin_dir}" >> /etc/environment
 
 # Source profile.d in non-login interactive shells so tool PATH entries in
 # /etc/profile.d/*.sh are available regardless of how bash is invoked.
