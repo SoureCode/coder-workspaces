@@ -317,7 +317,7 @@ resource "coder_script" "git_setup" {
     # project state (JetBrains .idea/) out of every repo the user touches,
     # without needing per-repo .gitignore edits.
     mkdir -p ~/.config/git
-    printf '.idea/\n' > ~/.config/git/ignore
+    printf '.idea/\n.codex\n' > ~/.config/git/ignore
   EOT
 }
 
