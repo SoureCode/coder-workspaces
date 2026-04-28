@@ -32,6 +32,14 @@ locals {
 
   git_author_name            = coalesce(data.coder_workspace_owner.me.full_name, data.coder_workspace_owner.me.name)
   git_author_email           = data.coder_workspace_owner.me.email
+
+  additional_ports = [
+    for entry in jsondecode(data.coder_parameter.additional_ports.value) : {
+      internal = tonumber(split(":", split("/", entry)[0])[0])
+      external = tonumber(split(":", split("/", entry)[0])[1])
+      protocol = length(split("/", entry)) > 1 ? split("/", entry)[1] : "tcp"
+    }
+  ]
 }
 
 data "coder_parameter" "workspace_image" {
@@ -83,6 +91,32 @@ data "coder_parameter" "directory" {
   display_name = "Working directory"
   description  = "Folder IDE modules and web-shell open by default."
   default      = "/home/coder/projects"
+  mutable      = true
+}
+
+data "coder_parameter" "additional_ports" {
+  type         = "list(string)"
+  name         = "additional_ports"
+  display_name = "Additional ports"
+  description  = <<-EOT
+    Extra container ports to publish to the host.
+
+    Format per entry: `internal:external[/protocol]`
+      - `internal`  — port inside the workspace container
+      - `external`  — port on the host
+      - `protocol`  — `tcp` or `udp` (optional, defaults to `tcp`)
+
+    Examples:
+      - `9000:9000/udp`  — SRT ingest on UDP 9000
+      - `8080:18080`     — HTTP on host 18080 → container 8080 (tcp)
+      - `5432:5432/tcp`  — Postgres
+
+    Notes:
+      - Changing this list replaces the container on next start.
+      - Host port conflicts fail at apply time.
+      - Malformed entries fail at plan time.
+  EOT
+  default      = jsonencode([])
   mutable      = true
 }
 
@@ -475,6 +509,15 @@ resource "docker_container" "workspace" {
   host {
     host = "host.docker.internal"
     ip   = "host-gateway"
+  }
+
+  dynamic "ports" {
+    for_each = local.additional_ports
+    content {
+      internal = ports.value.internal
+      external = ports.value.external
+      protocol = ports.value.protocol
+    }
   }
 
   volumes {
