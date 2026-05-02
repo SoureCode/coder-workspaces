@@ -385,8 +385,15 @@ resource "coder_script" "lifecycle_init" {
       rm -rf /mnt/home-persist/.local/share/JetBrains/Toolbox/download
       rm -rf /mnt/home-persist/.local/share/JetBrains/Toolbox/backup
       if [ -d /mnt/home-persist/.local/share/JetBrains ]; then
-        find /mnt/home-persist/.local/share/JetBrains -mindepth 2 -maxdepth 2 -type d \
-          \( -name caches -o -name logs \) -exec rm -rf {} +
+        for ide_state_dir in /mnt/home-persist/.local/share/JetBrains/*; do
+          [ -d "$ide_state_dir" ] || continue
+          case "$(basename "$ide_state_dir")" in
+            Toolbox|Daemon|consentOptions)
+              continue
+              ;;
+          esac
+          rm -rf "$ide_state_dir/caches" "$ide_state_dir/logs"
+        done
       fi
     fi
 
