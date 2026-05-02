@@ -370,10 +370,60 @@ resource "coder_script" "lifecycle_init" {
       touch "$sentinel"
     }
     if [ -w /mnt/home-persist ]; then
-      migration_sweep jetbrains-cache-owner-to-workspace .cache/JetBrains
+      migration_sweep jetbrains-cache-owner-to-ephemeral .cache/JetBrains
+      mkdir -p /mnt/home-persist/.jetbrains-dist
+      rm -rf /mnt/home-persist/.local/share/JetBrains/Daemon
+      rm -rf /mnt/home-persist/.local/share/JetBrains/Toolbox/download
+      rm -rf /mnt/home-persist/.local/share/JetBrains/Toolbox/backup
+      if [ -d /mnt/home-persist/.local/share/JetBrains ]; then
+        find /mnt/home-persist/.local/share/JetBrains -mindepth 2 -maxdepth 2 -type d \
+          \( -name caches -o -name logs \) -exec rm -rf {} +
+      fi
     fi
 
     [ -x /usr/local/bin/home-persist-resolve ]          && /usr/local/bin/home-persist-resolve
+
+    mkdir -p "$HOME/.local/share/JetBrains/Toolbox"
+    printf '%s\n' \
+      '{' \
+      '  "tools": {' \
+      '    "allowUpdate": false,' \
+      '    "location": [' \
+      '      {' \
+      '        "path": "/mnt/home-persist/.jetbrains-dist",' \
+      '        "levels": 1' \
+      '      }' \
+      '    ]' \
+      '  }' \
+      '}' \
+      > "$HOME/.local/share/JetBrains/Toolbox/environment.json"
+
+    mkdir -p "$HOME/.config/JetBrains" "$HOME/.local/share/JetBrains"
+    if [ -d "$HOME/.local/share/JetBrains" ]; then
+      for share_dir in "$HOME"/.local/share/JetBrains/*; do
+        [ -d "$share_dir" ] || continue
+        share_name="$(basename "$share_dir")"
+        case "$share_name" in
+          Toolbox|Daemon|consentOptions)
+            continue
+            ;;
+        esac
+        mkdir -p "$HOME/.config/JetBrains/$share_name"
+      done
+    fi
+    if [ -d "$HOME/.config/JetBrains" ]; then
+      for ide_dir in "$HOME"/.config/JetBrains/*; do
+        [ -d "$ide_dir" ] || continue
+        ide_name="$(basename "$ide_dir")"
+        printf '%s\n' \
+          "idea.config.path=$ide_dir" \
+          "idea.plugins.path=$HOME/.local/share/JetBrains/$ide_name/plugins" \
+          "idea.system.path=/tmp/jetbrains/system/$ide_name" \
+          "idea.log.path=/tmp/jetbrains/log/$ide_name" \
+          > "$ide_dir/idea.properties"
+      done
+    fi
+
     [ -x "$HOME/.local/share/rtk/post-create.sh" ]      && "$HOME/.local/share/rtk/post-create.sh"
     exit 0
   EOT

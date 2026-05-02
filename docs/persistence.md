@@ -66,14 +66,6 @@ opt in.
      single-writer semantics (lock files, unix sockets, per-project
      indexes) — otherwise two concurrent workspaces race and one fails.
 
-   ```json
-   {
-     "source": "jetbrains-local",
-     "scope": "workspace",
-     "paths": [".cache/JetBrains/"]
-   }
-   ```
-
    **Sibling rule**: owner-scoped and workspace-scoped paths must not nest
    under each other. A path symlinked at the parent already points into the
    shared volume; a child symlink would land inside that target and leak
@@ -108,14 +100,13 @@ opt in.
 │     │   .config/…   .local/share/…   .claude/   …               │
 │     │                                                           │
 │     └─ .workspaces/<CODER_WORKSPACE_ID>/   workspace-scoped     │
-│         ├─ <id-A>/  .cache/JetBrains/  …    (private to ws A)   │
-│         ├─ <id-B>/  .cache/JetBrains/  …    (private to ws B)   │
-│         └─ <id-C>/  .cache/JetBrains/  …    (private to ws C)   │
+│         ├─ <id-A>/  <workspace-only paths>                      │
+│         ├─ <id-B>/  <workspace-only paths>                      │
+│         └─ <id-C>/  <workspace-only paths>                      │
 │                                                                 │
 │   workspace A mounts /mnt/home-persist                          │
 │     └─► $HOME/.config/JetBrains → /mnt/home-persist/.config/... │
-│     └─► $HOME/.cache/JetBrains  → /mnt/home-persist/.workspaces │
-│                                     /<ws-A-id>/.cache/JetBrains │
+│     └─► $HOME/.local/share/JetBrains → /mnt/home-persist/...    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -136,8 +127,7 @@ Properties that fall out:
 | Source            | Scope       | Paths                         | Why                                  |
 | ----------------- | ----------- | ----------------------------- | ------------------------------------ |
 | `claude-code`     | owner       | `.claude/`, `.claude.json`    | Login credentials, sessions, plugins |
-| `jetbrains`       | owner       | `.config/JetBrains/`, `.local/share/JetBrains/`, `.java/.userPrefs/jetbrains/` | Settings, plugins, and JetProfile state that should follow the user across workspaces. Keymaps, color schemes, installed plugins, license acceptance. |
-| `jetbrains-local` | workspace   | `.cache/JetBrains/` | Per-workspace runtime: the SSH-deployed Toolbox Agent (`Toolbox-CLI-dist/`), its IPC lock and unix socket under `Toolbox/ports/`, the downloaded IDE backend (`RemoteDev/dist/`), and per-IDE system caches and project indexes. Must be per-workspace — concurrent workspaces that share `.cache/JetBrains/` race on the Toolbox Agent's `UnixApplicationStartLock` and fail to connect ("main instance is alive, cannot bind twice"). |
+| `jetbrains`       | owner       | `.config/JetBrains/`, `.local/share/JetBrains/`, `.java/.userPrefs/jetbrains/` | Settings, plugins, and JetProfile/license state that should follow the user across workspaces. |
 
 Anything not declared is image-owned (or per-workspace-home-volume-owned)
 and resets on image rebuild — git config, SSH keys, bash history, caches.
@@ -244,12 +234,11 @@ ls /mnt/home-persist/.workspaces/
 rm -rf /mnt/home-persist/.workspaces/<stale-id>
 ```
 
-## Migrating an owner-scoped path to workspace-scoped
+## Migrating or Dropping a Persisted Path
 
-Flipping a path from `scope: "owner"` to `scope: "workspace"` leaves the old
-`/mnt/home-persist/<path>` dir behind — the resolver retargets the symlink
-but doesn't touch the previous target. Tens to hundreds of MB can accumulate
-(JetBrains caches, Docker-ish state, etc.).
+Changing persistence scope or dropping persistence for a path leaves the old
+`/mnt/home-persist/<path>` dir behind — the resolver retargets or removes
+symlink ownership, but doesn't clean the previous target automatically.
 
 Add a `migration_sweep` line to `coder_script.lifecycle_init` in `main.tf`,
 keyed by a unique sentinel name:
@@ -257,8 +246,31 @@ keyed by a unique sentinel name:
 ```bash
 migration_sweep <sentinel-name> <path-relative-to-/mnt/home-persist>
 # e.g.
-migration_sweep jetbrains-cache-owner-to-workspace .cache/JetBrains
+migration_sweep jetbrains-cache-owner-to-ephemeral .cache/JetBrains
+migration_sweep jetbrains-toolbox-download-owner-to-ephemeral .local/share/JetBrains/Toolbox/download
+migration_sweep jetbrains-toolbox-backup-owner-to-ephemeral .local/share/JetBrains/Toolbox/backup
 ```
+
+For JetBrains backend reuse between restarts, `main.tf` creates
+`/mnt/home-persist/.jetbrains-dist` and writes Toolbox `environment.json`
+with a fixed `tools.location` pointing to that path.
+
+Because `.local/share/JetBrains/` is persisted broadly, `main.tf` startup also
+prunes subpaths that should remain ephemeral:
+
+`~/.local/share/JetBrains/Daemon/`
+`~/.local/share/JetBrains/Toolbox/download/`
+`~/.local/share/JetBrains/Toolbox/backup/`
+`~/.local/share/JetBrains/*/{caches,logs}/`
+
+`main.tf` startup also writes `~/.local/share/JetBrains/Toolbox/environment.json`
+with `tools.allowUpdate=false` and a pinned tool location, and writes `idea.properties` in each
+`~/.config/JetBrains/<IDE>/` directory with:
+
+`idea.config.path=~/.config/JetBrains/<IDE>`
+`idea.plugins.path=~/.local/share/JetBrains/<IDE>/plugins`
+`idea.system.path=/tmp/jetbrains/system/<IDE>`
+`idea.log.path=/tmp/jetbrains/log/<IDE>`
 
 The sweep runs once per owner volume (the sentinel
 `/mnt/home-persist/.workspaces/.migrated/<sentinel-name>` blocks reruns) and
