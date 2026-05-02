@@ -129,6 +129,15 @@ data "coder_parameter" "home_persist_paths" {
   mutable      = true
 }
 
+data "coder_parameter" "jetbrains_allow_updates" {
+  type         = "bool"
+  name         = "jetbrains_allow_updates"
+  display_name = "JetBrains auto-updates"
+  description  = "Allow JetBrains Toolbox to update IDE backends in the workspace. Keep false by default; temporarily set true only when you intentionally refresh backend versions."
+  default      = false
+  mutable      = true
+}
+
 provider "coder" {}
 provider "docker" {
   host = var.docker_socket != "" ? var.docker_socket : null
@@ -387,7 +396,7 @@ resource "coder_script" "lifecycle_init" {
     printf '%s\n' \
       '{' \
       '  "tools": {' \
-      '    "allowUpdate": false,' \
+      '    "allowUpdate": ${data.coder_parameter.jetbrains_allow_updates.value},' \
       '    "location": [' \
       '      {' \
       '        "path": "/mnt/home-persist/.jetbrains-dist",' \

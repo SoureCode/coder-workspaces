@@ -264,13 +264,21 @@ prunes subpaths that should remain ephemeral:
 `~/.local/share/JetBrains/*/{caches,logs}/`
 
 `main.tf` startup also writes `~/.local/share/JetBrains/Toolbox/environment.json`
-with `tools.allowUpdate=false` and a pinned tool location, and writes `idea.properties` in each
+with `tools.allowUpdate` driven by template parameter `jetbrains_allow_updates`
+(default `false`) and a pinned tool location, and writes `idea.properties` in each
 `~/.config/JetBrains/<IDE>/` directory with:
 
 `idea.config.path=~/.config/JetBrains/<IDE>`
 `idea.plugins.path=~/.local/share/JetBrains/<IDE>/plugins`
 `idea.system.path=/tmp/jetbrains/system/<IDE>`
 `idea.log.path=/tmp/jetbrains/log/<IDE>`
+
+Recommended update workflow:
+
+1. Set `jetbrains_allow_updates=true`.
+2. Start one workspace and let Toolbox update/install backend artifacts.
+3. Set `jetbrains_allow_updates=false`.
+4. Restart workspace(s) to return to pinned/no-auto-update mode.
 
 The sweep runs once per owner volume (the sentinel
 `/mnt/home-persist/.workspaces/.migrated/<sentinel-name>` blocks reruns) and
