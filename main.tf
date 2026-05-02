@@ -51,7 +51,7 @@ data "coder_parameter" "workspace_image" {
   mutable      = true
 
   option {
-    name  = "base — dev-kit only (Node via nvm, Claude, rtk, context-mode, web-shell, home-persist)"
+    name  = "base — dev-kit only (Node via nvm, Claude, rtk, web-shell, home-persist)"
     value = "base"
   }
   option {
@@ -322,8 +322,8 @@ resource "coder_script" "git_setup" {
 }
 
 # Lifecycle hooks baked into the image by the dev-kit install scripts.
-# Sequential execution because context-mode and rtk write into ~/.claude,
-# which must be symlinked into the persistence volume by home-persist first.
+# Sequential execution because rtk writes into ~/.claude, which must be
+# symlinked into the persistence volume by home-persist first.
 # start_blocks_login keeps IDEs / shells from connecting before $HOME is ready.
 resource "coder_script" "lifecycle_init" {
   count              = data.coder_workspace.me.start_count
@@ -374,7 +374,6 @@ resource "coder_script" "lifecycle_init" {
     fi
 
     [ -x /usr/local/bin/home-persist-resolve ]          && /usr/local/bin/home-persist-resolve
-    [ -x /usr/local/share/context-mode/post-create.sh ] && /usr/local/share/context-mode/post-create.sh
     [ -x "$HOME/.local/share/rtk/post-create.sh" ]      && "$HOME/.local/share/rtk/post-create.sh"
     exit 0
   EOT

@@ -15,7 +15,7 @@ Images are published to GHCR under `ghcr.io/sourecode/coder-workspace`.
 
 | Tag | Base | Adds |
 |---|---|---|
-| `base` | `debian:trixie-slim` | systemd + dockerd + `nvm` + `claude-code` + `rtk` + `context-mode` + `web-shell` + `home-persist` + `jetbrains` |
+| `base` | `debian:trixie-slim` | systemd + dockerd + `nvm` + `claude-code` + `rtk` + `web-shell` + `home-persist` + `jetbrains` |
 | `node` | `:base` | named variant for future Node-specific tooling — currently identical to `base` (Node comes from nvm) |
 | `cpp`  | `:base` | `llvm` (clang + toolchain), `cmake`, `sccache`, `/etc/profile.d/llvm-env.sh` exporting `CC`/`CXX` |
 
@@ -28,7 +28,6 @@ the workspace in Coder.
 |---|---|---|
 | `claude-code` | Anthropic [Claude Code CLI](https://claude.ai/) | `~/.claude` + `~/.claude.json` persisted via `home-persist` |
 | `rtk` | [rtk](https://github.com/rtk-ai/rtk), token-reducing Claude proxy | Auto-patches Claude Code via a post-create hook at workspace start |
-| `context-mode` | [`context-mode`](https://github.com/mksglu/context-mode) Claude plugin | Installed via a post-create hook so it lands in the persisted `~/.claude/plugins` |
 | `nvm` | [nvm](https://github.com/nvm-sh/nvm) at `/usr/local/share/nvm` | Default Node = LTS, `node`/`npm`/`npx` in `/usr/local/bin` |
 | `web-shell` | [web-shell](https://github.com/SoureCode/web-shell), persistent browser terminal | systemd unit, registered as a Coder app |
 | `jetbrains` | JetBrains Gateway remote backend persistence | Headless-only: Toolbox/Gateway runs on the user's local machine, opens a `jetbrains-gateway://` URL that SSHes in and runs `remote-dev-server.sh` here. Declares `~/.cache/JetBrains/`, `~/.config/JetBrains/`, `~/.local/share/JetBrains/`, `~/.java/.userPrefs/jetbrains/` to `home-persist` so the downloaded IDE backend, per-IDE settings, plugins, project indexes and JetProfile login survive workspace restarts. |
@@ -199,7 +198,6 @@ docs/
 scripts/
   claude-code/install.sh
   cmake/install.sh
-  context-mode/install.sh
   home-persist/{install.sh,resolve.sh}
   llvm/install.sh
   nvm/install.sh
@@ -226,7 +224,7 @@ main.tf                              # Coder template
 - For anything that genuinely needs to live in the user's real home
   (credentials, plugin state, shell-rc tweaks), emit a script to
   `/usr/local/share/<id>/post-create.sh` and wire it via a `coder_script` in
-  `main.tf` that runs at agent start (see how `context-mode` and `rtk` do it).
+  `main.tf` that runs at agent start (see how `rtk` does it).
 - If your script writes persistent state under `$HOME`, declare those paths
   by dropping a JSON manifest:
 

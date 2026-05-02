@@ -83,8 +83,6 @@ ENV _REMOTE_USER=${USERNAME}
 # Per-tool bind mounts so a change in one installer only busts its own layer.
 # A single mount of scripts/ would hash the whole dir — bumping web-shell
 # would rebuild every tool.
-RUN --mount=type=bind,source=scripts/context-mode,target=/scripts/context-mode \
-    bash /scripts/context-mode/install.sh
 RUN --mount=type=bind,source=scripts/home-persist,target=/scripts/home-persist \
     bash /scripts/home-persist/install.sh
 RUN --mount=type=bind,source=scripts/icu,target=/scripts/icu \
