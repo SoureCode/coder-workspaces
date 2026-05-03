@@ -85,6 +85,8 @@ ENV _REMOTE_USER=${USERNAME}
 # would rebuild every tool.
 RUN --mount=type=bind,source=scripts/home-persist,target=/scripts/home-persist \
     bash /scripts/home-persist/install.sh
+RUN --mount=type=bind,source=scripts/bash,target=/scripts/bash \
+    bash /scripts/bash/install.sh
 RUN --mount=type=bind,source=scripts/icu,target=/scripts/icu \
     bash /scripts/icu/install.sh
 RUN --mount=type=bind,source=scripts/gh,target=/scripts/gh \
