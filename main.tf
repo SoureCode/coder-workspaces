@@ -150,7 +150,6 @@ data "coder_workspace_owner" "me" {}
 resource "coder_agent" "main" {
   arch = data.coder_provisioner.me.arch
   os   = "linux"
-  dir  = data.coder_parameter.directory.value
 
   # Workspace identity is exposed to shells and coder_script blocks so
   # home-persist-resolve can scope per-workspace paths under
@@ -251,7 +250,7 @@ resource "coder_app" "web-shell" {
   agent_id     = coder_agent.main.id
   slug         = "web-shell"
   display_name = "web-shell"
-  url          = "http://localhost:4000"
+  url          = "http://localhost:4000/?cwd=${urlencode(data.coder_parameter.directory.value)}"
   icon         = "/icon/terminal.svg"
   subdomain    = true
   share        = "owner"
