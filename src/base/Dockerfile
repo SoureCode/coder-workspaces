@@ -28,8 +28,9 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
 # Baseline packages + Docker engine.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
-        bash bash-completion build-essential ca-certificates curl docker-ce-cli \
-        docker-buildx-plugin docker-compose-plugin dtach file git gnupg \
+        bash bash-completion build-essential ca-certificates containerd.io curl \
+        docker-ce docker-ce-cli docker-buildx-plugin docker-compose-plugin \
+        dtach file git gnupg \
         htop iproute2 iputils-ping jq less locales lsb-release lsof \
         man-db openssh-client pipx pkg-config procps python3 python3-pip rsync strace \
         sudo systemd systemd-sysv tar tree unzip vim wget bubblewrap \
@@ -42,9 +43,11 @@ RUN apt-get update && \
 RUN ssh-keyscan -t rsa,ecdsa,ed25519 github.com gitlab.com bitbucket.org \
         >> /etc/ssh/ssh_known_hosts 2>/dev/null
 
-# Workspace runs Docker-out-of-Docker: the host's /var/run/docker.sock is
-# bind-mounted in. Only the docker CLI + plugins are installed (no engine,
-# no containerd), so there's no in-image daemon to mask.
+# Workspace runs Docker-in-Docker: dockerd runs inside the workspace under
+# systemd. /var/lib/docker lives in the container writable layer, which Coder
+# wipes on every workspace stop — so disk does not accumulate across
+# restarts. docker-prune.service additionally runs `docker system prune -af
+# --volumes` on shutdown as a belt-and-braces reclaim.
 
 # Classic `docker-compose` name → the compose plugin binary.
 RUN ln -s /usr/libexec/docker/cli-plugins/docker-compose /usr/bin/docker-compose
@@ -55,9 +58,9 @@ ENV LANG=en_US.UTF-8
 ENV LANGUAGE=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
 
-# Workspace user: uid 1000, in docker group, passwordless sudo.
-RUN groupadd --system docker && \
-    useradd "${USERNAME}" \
+# Workspace user: uid 1000, in docker group, passwordless sudo. The docker
+# package already creates the `docker` system group; reuse it.
+RUN useradd "${USERNAME}" \
         --create-home \
         --shell=/bin/bash \
         --groups=docker \
@@ -128,12 +131,11 @@ RUN printf '\nif [ -d /etc/profile.d ]; then\n  for i in /etc/profile.d/*.sh; do
 RUN mkdir -p /etc/coder
 COPY src/base/coder-agent.service /etc/systemd/system/coder-agent.service
 COPY src/base/web-shell.service /etc/systemd/system/web-shell.service
-COPY src/base/run-docker.sock.mount /etc/systemd/system/run-docker.sock.mount
-COPY src/base/docker-sock.tmpfiles.conf /etc/tmpfiles.d/docker-sock.conf
+COPY src/base/docker-prune.service /etc/systemd/system/docker-prune.service
 COPY --chmod=0755 src/base/web-shell-launch.sh /usr/local/bin/web-shell-launch
 RUN install -m 0644 /dev/null /var/log/web-shell.log && \
     chown coder:coder /var/log/web-shell.log && \
-    systemctl enable coder-agent.service web-shell.service run-docker.sock.mount
+    systemctl enable coder-agent.service web-shell.service docker.service docker-prune.service
 
 # Entrypoint claims fresh-volume mountpoints for the workspace user before
 # systemd starts. See entrypoint.sh for rationale.

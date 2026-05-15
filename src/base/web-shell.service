@@ -1,8 +1,7 @@
 [Unit]
 Description=web-shell
-After=network-online.target run-docker.sock.mount
+After=network-online.target docker.service
 Wants=network-online.target
-Requires=run-docker.sock.mount
 
 [Service]
 Type=simple

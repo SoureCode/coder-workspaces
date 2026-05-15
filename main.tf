@@ -439,11 +439,11 @@ removed {
   }
 }
 
-# docker_data volume is no longer managed — the workspace now runs
-# Docker-out-of-Docker against the host daemon (host /var/run/docker.sock is
-# bind-mounted in), so there is no in-container /var/lib/docker to persist.
-# Volume is retained to avoid data loss for any workspace that still has
-# images/cache in it from the sysbox era.
+# docker_data volume is no longer managed — the workspace runs Docker-in-
+# Docker with /var/lib/docker on the container writable layer (wiped on
+# every workspace stop by Coder; docker-prune.service additionally prunes
+# on shutdown). Volume is retained to avoid data loss for any workspace
+# that still has images/cache in it from the sysbox era.
 removed {
   from = docker_volume.docker_data
   lifecycle {
@@ -557,17 +557,6 @@ resource "docker_container" "workspace" {
   volumes {
     container_path = "/mnt/home-persist"
     volume_name    = "coder-${data.coder_workspace_owner.me.name}-home-persist"
-    read_only      = false
-  }
-
-  # Stash the host socket outside /run, which systemd remounts as a fresh
-  # tmpfs at boot and would shadow a bind mount placed there. A systemd
-  # .mount unit in the image re-binds /host-docker.sock onto
-  # /run/docker.sock after /run is set up. (/var/run is a symlink to /run on
-  # Debian; systemd rejects non-canonical mount unit paths.)
-  volumes {
-    container_path = "/host-docker.sock"
-    host_path      = "/var/run/docker.sock"
     read_only      = false
   }
 
