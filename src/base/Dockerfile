@@ -28,7 +28,7 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
 # Baseline packages + Docker engine.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
-        bash bash-completion build-essential ca-certificates containerd.io curl docker-ce docker-ce-cli \
+        bash bash-completion build-essential ca-certificates curl docker-ce-cli \
         docker-buildx-plugin docker-compose-plugin dtach file git gnupg \
         htop iproute2 iputils-ping jq less locales lsb-release lsof \
         man-db openssh-client pipx pkg-config procps python3 python3-pip rsync strace \
@@ -42,14 +42,9 @@ RUN apt-get update && \
 RUN ssh-keyscan -t rsa,ecdsa,ed25519 github.com gitlab.com bitbucket.org \
         >> /etc/ssh/ssh_known_hosts 2>/dev/null
 
-# Disable containerd-snapshotter so image/layer data stays under
-# /var/lib/docker (classic overlay2) instead of /var/lib/containerd — the
-# persistent devcontainer cache volume only covers /var/lib/docker.
-RUN mkdir -p /etc/docker && \
-    printf '{\n  "features": { "containerd-snapshotter": false }\n}\n' \
-        > /etc/docker/daemon.json
-
-RUN systemctl enable docker
+# Workspace runs Docker-out-of-Docker: the host's /var/run/docker.sock is
+# bind-mounted in. Only the docker CLI + plugins are installed (no engine,
+# no containerd), so there's no in-image daemon to mask.
 
 # Classic `docker-compose` name → the compose plugin binary.
 RUN ln -s /usr/libexec/docker/cli-plugins/docker-compose /usr/bin/docker-compose
@@ -126,8 +121,9 @@ RUN printf '\nif [ -d /etc/profile.d ]; then\n  for i in /etc/profile.d/*.sh; do
         >> /etc/bash.bashrc
 
 # Coder agent: systemd unit runs /etc/coder/agent-init.sh as the workspace
-# user after dockerd is up. The script itself is uploaded at container-create
-# time by the Terraform template (kreuzwerker/docker `upload` block).
+# user after the network is up. The script itself is uploaded at
+# container-create time by the Terraform template (kreuzwerker/docker
+# `upload` block).
 RUN mkdir -p /etc/coder
 COPY src/base/coder-agent.service /etc/systemd/system/coder-agent.service
 COPY src/base/web-shell.service /etc/systemd/system/web-shell.service

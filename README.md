@@ -1,9 +1,9 @@
 # SoureCode Coder Workspace Template
 
 A Coder workspace template plus a family of workspace images with pre-installed
-dev tooling. Each workspace runs its own `dockerd` under
-[sysbox](https://github.com/nestybox/sysbox), so you can build and test your
-own `Dockerfile`s, run `docker compose` stacks, etc. inside the workspace.
+dev tooling. Each workspace gets the host's Docker socket bind-mounted in
+(Docker-out-of-Docker), so you can `docker build`, `docker compose up`, etc.
+from inside the workspace using the host daemon.
 
 One container per workspace — no nested devcontainer layer. IDEs (VS Code
 Desktop, JetBrains, code-server, web-shell) all attach to the single
@@ -15,7 +15,7 @@ Images are published to GHCR under `ghcr.io/sourecode/coder-workspace`.
 
 | Tag | Base | Adds |
 |---|---|---|
-| `base` | `debian:trixie-slim` | systemd + dockerd + `nvm` + `claude-code` + `rtk` + `web-shell` + `home-persist` + `jetbrains` |
+| `base` | `debian:trixie-slim` | systemd + docker CLI (DooD) + `nvm` + `claude-code` + `rtk` + `web-shell` + `home-persist` + `jetbrains` |
 | `node` | `:base` | named variant for future Node-specific tooling — currently identical to `base` (Node comes from nvm) |
 | `cpp`  | `:base` | `llvm` (clang + toolchain), `cmake`, `sccache`, `/etc/profile.d/llvm-env.sh` exporting `CC`/`CXX` |
 
@@ -43,21 +43,26 @@ goes through `home-persist`'s manifest system.
 ## Architecture
 
 ```
- host docker daemon  (sysbox-runc runtime registered)
+ host docker daemon
+ ├── /var/run/docker.sock  ─────────┐  (bind-mounted into every workspace)
  └── workspace container (ghcr.io/sourecode/coder-workspace:<tag>)
-     ├── systemd (PID 1)
-     ├── dockerd (for in-workspace docker build / docker compose)
+     ├── systemd (PID 1)            │
+     ├── docker CLI ────────────────┘  (Docker-out-of-Docker via host socket)
      └── coder-agent.service (runs /etc/coder/agent-init.sh as `coder`)
 ```
 
+The container runs `--privileged` and shares the host Docker socket. This is
+fine for a single-tenant box but means workspace root effectively equals host
+root — don't onboard untrusted users.
+
 ## Template files
 
-- `main.tf` — Coder template. Launches the workspace container under
-  `runtime = "sysbox-runc"`, injects `CODER_AGENT_TOKEN` via env, and uploads
-  the agent init script to `/etc/coder/agent-init.sh`. The
-  `coder-agent.service` systemd unit (baked into the image) runs that script
-  on boot.
-- `src/base/Dockerfile` — shared base: Debian trixie + systemd + dockerd +
+- `main.tf` — Coder template. Launches the workspace container with
+  `privileged = true`, bind-mounts `/var/run/docker.sock` from the host,
+  injects `CODER_AGENT_TOKEN` via env, and uploads the agent init script to
+  `/etc/coder/agent-init.sh`. The `coder-agent.service` systemd unit (baked
+  into the image) runs that script on boot.
+- `src/base/Dockerfile` — shared base: Debian trixie + systemd + docker CLI +
   `coder` user + dev-kit scripts.
 - `src/node/Dockerfile`, `src/cpp/Dockerfile` — stack variants (`FROM :base`).
 - `scripts/<name>/install.sh` — bound into each Dockerfile at build time via
@@ -66,51 +71,13 @@ goes through `home-persist`'s manifest system.
 
 ## Prerequisites (on the Docker host)
 
-1. Linux kernel >= 5.12 (>= 6.3 ideal, avoids shiftfs entirely)
-2. Native Docker (not the snap) at `/usr/bin/docker`
-3. Sysbox installed (see below)
-4. An existing Coder server (this template was developed against a
+1. Native Docker (not the snap) at `/usr/bin/docker`
+2. An existing Coder server (this template was developed against a
    docker-compose-deployed Coder)
 
-## Install sysbox
-
-Zero-container-deletion install, tolerates a single `dockerd` restart.
-
-```bash
-# 1. pre-populate /etc/docker/daemon.json so sysbox's post-install step
-#    doesn't need to touch the network config itself
-sudo tee /etc/docker/daemon.json >/dev/null <<'JSON'
-{
-  "bip": "172.24.0.1/16",
-  "default-address-pools": [
-    { "base": "172.31.0.0/16", "size": 24 }
-  ]
-}
-JSON
-
-# Pick CIDRs free of your existing networks:
-#   docker network inspect $(docker network ls -q) | grep -i subnet
-
-# 2. one controlled restart so dockerd loads the keys
-sudo systemctl restart docker
-
-# 3. install sysbox (Ubuntu/Debian amd64)
-wget https://downloads.nestybox.com/sysbox/releases/v0.7.0/sysbox-ce_0.7.0-0.linux_amd64.deb
-sudo apt-get install -y jq fuse3 ./sysbox-ce_0.7.0-0.linux_amd64.deb
-
-# 4. verify
-docker info | grep -i runtime                # should list sysbox-runc
-systemctl status sysbox --no-pager
-```
-
-Smoke test that nested Docker works under sysbox:
-
-```bash
-CID=$(docker run -d --rm --runtime=sysbox-runc nestybox/ubuntu-noble-systemd-docker)
-sleep 15
-docker exec "$CID" docker run --rm hello-world   # should print the hello-world greeting
-docker stop "$CID"
-```
+No sysbox or special runtime is required — workspaces run under the default
+runc with `--privileged` and the host's `/var/run/docker.sock` bind-mounted
+in.
 
 ## Build the workspace images
 
@@ -162,29 +129,42 @@ pushing a new version, either:
   container exited instead of running systemd. Check:
   ```bash
   CID=$(docker ps -a --filter "name=coder-" -q | head -1)
-  docker inspect "$CID" --format '{{.HostConfig.Runtime}} {{.Config.Image}} {{.State.Status}}'
+  docker inspect "$CID" --format '{{.Config.Image}} {{.State.Status}}'
   docker logs "$CID" | tail -50
   ```
-  Runtime must be `sysbox-runc`. Image should match whatever the template's
-  `workspace_image` parameter resolved to.
+  Image should match whatever the template's `workspace_image` parameter
+  resolved to.
 
 - **Agent up but nothing connects** — inspect systemd and the agent unit:
   ```bash
   docker exec "$CID" systemctl is-system-running
-  docker exec "$CID" systemctl status docker coder-agent --no-pager
+  docker exec "$CID" systemctl status coder-agent --no-pager
   docker exec "$CID" journalctl -u coder-agent --no-pager -n 100
   docker exec "$CID" ls -la /etc/coder/      # expect agent-init.sh present + executable
   docker exec "$CID" bash -lc "tr '\0' '\n' < /proc/1/environ | grep CODER_AGENT_TOKEN"
   ```
 
-## Why sysbox
+- **`docker` from inside the workspace says "permission denied"** — the
+  bind-mounted host socket has the host's `docker` group GID, which may not
+  match the in-image `docker` group. The entrypoint aligns them at boot;
+  if it didn't run (or you exec'd a fresh shell before it finished), check:
+  ```bash
+  docker exec "$CID" stat -c '%g' /var/run/docker.sock
+  docker exec "$CID" getent group docker
+  ```
+  The two GIDs must match for `coder` to use the socket without sudo.
 
-The workspace bakes `dockerd` in so you can `docker build`, `docker compose up`,
-or run a project's own Dockerfile straight from inside your workspace without
-going through the host daemon. Running an inner dockerd safely inside a
-container is exactly what sysbox provides — plain `runc` would require
-`--privileged` and you'd still fight shared-kernel artefacts. Sysbox handles
-it with proper namespace isolation.
+## Why DooD (and not DinD or sysbox)
+
+Bind-mounting the host socket lets `docker build`, `docker compose up`, and
+project Dockerfiles run from inside the workspace without nesting a second
+Docker engine. The previous setup ran an inner `dockerd` under sysbox for
+isolation; we dropped it because the maintenance cost (sysbox install,
+persistent `/var/lib/docker` volume per workspace, dockerd shutdown
+ordering) outweighed the benefit on a single-tenant deployment. The trade
+is that workspaces share image cache and network namespace with the host
+daemon, and `--privileged` means workspace root can reach host root — only
+do this where you trust every workspace owner.
 
 ## Developing on this repo
 
@@ -205,7 +185,7 @@ scripts/
   sccache/install.sh
   web-shell/install.sh
 src/
-  base/Dockerfile                    # debian-trixie + systemd + dockerd + dev-kit
+  base/Dockerfile                    # debian-trixie + systemd + docker CLI + dev-kit
   cpp/Dockerfile                     # FROM :base + llvm/cmake/sccache
   node/Dockerfile                    # FROM :base
 main.tf                              # Coder template

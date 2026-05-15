@@ -20,7 +20,7 @@ opt in.
 ## The three moving parts
 
 1. **The volume + mount.** `main.tf` declares `docker_volume.home_persist`
-   (per-owner, lives in the host dockerd) and mounts it into every workspace
+   (per-owner, lives in the host Docker daemon) and mounts it into every workspace
    container at `/mnt/home-persist`:
 
    ```hcl
@@ -92,7 +92,7 @@ opt in.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ host dockerd                                                    │
+│ host Docker daemon                                                    │
 │                                                                 │
 │   docker volume: coder-<owner>-home-persist  ◄── one per owner  │
 │     │                                                           │
@@ -110,7 +110,7 @@ opt in.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-The volume lives in the **host** dockerd, above any individual workspace.
+The volume lives in the **host** Docker daemon, above any individual workspace.
 Declared in `main.tf` as `docker_volume "home_persist"`, scoped by
 `coder_workspace_owner.me.name`, and bind-mounted into the workspace
 container at `/mnt/home-persist`.

@@ -440,8 +440,11 @@ removed {
   }
 }
 
-# docker_data volume is no longer managed — workspace DinD now uses the host
-# Docker socket. Volume is retained to avoid data loss.
+# docker_data volume is no longer managed — the workspace now runs
+# Docker-out-of-Docker against the host daemon (host /var/run/docker.sock is
+# bind-mounted in), so there is no in-container /var/lib/docker to persist.
+# Volume is retained to avoid data loss for any workspace that still has
+# images/cache in it from the sysbox era.
 removed {
   from = docker_volume.docker_data
   lifecycle {
@@ -499,10 +502,9 @@ resource "docker_container" "workspace" {
   name     = "coder-${data.coder_workspace_owner.me.name}-${lower(data.coder_workspace.me.name)}"
   hostname = data.coder_workspace.me.name
 
-  # Give systemd enough time to shut dockerd down cleanly on stop. The
-  # default (10s) causes SIGKILL mid-flush, which corrupts the persistent
-  # /var/lib/docker volume on the next start.
-  stop_timeout = 120
+  # PID 1 is systemd; give it a few seconds beyond the default to drain
+  # units cleanly on stop.
+  stop_timeout = 30
   privileged   = true
 
   # PID 1 is /sbin/init (systemd). coder-agent.service (baked into the image)
