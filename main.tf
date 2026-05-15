@@ -463,6 +463,29 @@ resource "docker_volume" "docker_data" {
   }
 }
 
+# /var/lib/containerd needs its own non-overlay backing for the same reason
+# as /var/lib/docker: buildkit (embedded in dockerd) uses containerd's
+# overlayfs snapshotter for cache mounts, and the kernel refuses nested
+# overlay with redirect_dir=off when the underlying dirs sit on an overlay.
+resource "docker_volume" "containerd_data" {
+  name = "coder-${data.coder_workspace.me.id}-containerd-data"
+  lifecycle {
+    ignore_changes = all
+  }
+  labels {
+    label = "coder.owner"
+    value = data.coder_workspace_owner.me.name
+  }
+  labels {
+    label = "coder.owner_id"
+    value = data.coder_workspace_owner.me.id
+  }
+  labels {
+    label = "coder.workspace_id"
+    value = data.coder_workspace.me.id
+  }
+}
+
 # Per-workspace projects volume. Cloned repos + work-in-progress live here
 # so they survive workspace restarts. $HOME itself is image-owned and resets
 # each start; per-owner state that must persist outside projects goes through
@@ -564,6 +587,12 @@ resource "docker_container" "workspace" {
   volumes {
     container_path = "/var/lib/docker"
     volume_name    = docker_volume.docker_data.name
+    read_only      = false
+  }
+
+  volumes {
+    container_path = "/var/lib/containerd"
+    volume_name    = docker_volume.containerd_data.name
     read_only      = false
   }
 
