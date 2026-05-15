@@ -503,6 +503,7 @@ resource "docker_container" "workspace" {
   # default (10s) causes SIGKILL mid-flush, which corrupts the persistent
   # /var/lib/docker volume on the next start.
   stop_timeout = 120
+  privileged   = true
 
   # PID 1 is /sbin/init (systemd). coder-agent.service (baked into the image)
   # execs /etc/coder/agent-init.sh, which this `upload` block provides.
