@@ -560,8 +560,12 @@ resource "docker_container" "workspace" {
     read_only      = false
   }
 
+  # Stash the host socket outside /run, which systemd remounts as a fresh
+  # tmpfs at boot and would shadow a bind mount placed there. A systemd
+  # .mount unit in the image re-binds /host-docker.sock onto
+  # /var/run/docker.sock after /run is set up.
   volumes {
-    container_path = "/var/run/docker.sock"
+    container_path = "/host-docker.sock"
     host_path      = "/var/run/docker.sock"
     read_only      = false
   }

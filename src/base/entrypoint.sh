@@ -26,8 +26,8 @@ fi
 # DooD: align the in-image `docker` group GID with the host socket's GID so
 # the workspace user (member of `docker` in the image) can talk to the
 # bind-mounted host daemon without a chmod 666 on the socket.
-if [ -S /var/run/docker.sock ]; then
-  sock_gid=$(stat -c '%g' /var/run/docker.sock)
+if [ -S /host-docker.sock ]; then
+  sock_gid=$(stat -c '%g' /host-docker.sock)
   cur_gid=$(getent group docker | cut -d: -f3 || true)
   if [ -n "$sock_gid" ] && [ "$sock_gid" != "$cur_gid" ]; then
     # If another group already owns the target GID, rename it out of the way

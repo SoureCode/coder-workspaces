@@ -1,0 +1,17 @@
+[Unit]
+Description=Bind-mount host Docker socket into /var/run
+DefaultDependencies=no
+After=systemd-tmpfiles-setup.service
+Requires=systemd-tmpfiles-setup.service
+ConditionPathExists=/host-docker.sock
+Before=sysinit.target shutdown.target
+Conflicts=shutdown.target
+
+[Mount]
+What=/host-docker.sock
+Where=/var/run/docker.sock
+Type=none
+Options=bind
+
+[Install]
+WantedBy=sysinit.target
