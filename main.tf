@@ -440,29 +440,12 @@ removed {
   }
 }
 
-# Persistent storage for the workspace's inner dockerd. Without this, every
-# `docker pull`, buildx cache, and image built inside the workspace is lost
-# on every restart. The workspace's dockerd runs under sysbox-runc.
-resource "docker_volume" "docker_data" {
-  name = "coder-${data.coder_workspace.me.id}-docker"
+# docker_data volume is no longer managed — workspace DinD now uses the host
+# Docker socket. Volume is retained to avoid data loss.
+removed {
+  from = docker_volume.docker_data
   lifecycle {
-    ignore_changes = all
-  }
-  labels {
-    label = "coder.owner"
-    value = data.coder_workspace_owner.me.name
-  }
-  labels {
-    label = "coder.owner_id"
-    value = data.coder_workspace_owner.me.id
-  }
-  labels {
-    label = "coder.workspace_id"
-    value = data.coder_workspace.me.id
-  }
-  labels {
-    label = "coder.workspace_name_at_creation"
-    value = data.coder_workspace.me.name
+    destroy = false
   }
 }
 
@@ -512,7 +495,6 @@ resource "docker_image" "workspace" {
 resource "docker_container" "workspace" {
   count   = data.coder_workspace.me.start_count
   image   = docker_image.workspace.image_id
-  runtime = "sysbox-runc"
 
   name     = "coder-${data.coder_workspace_owner.me.name}-${lower(data.coder_workspace.me.name)}"
   hostname = data.coder_workspace.me.name
@@ -577,8 +559,8 @@ resource "docker_container" "workspace" {
   }
 
   volumes {
-    container_path = "/var/lib/docker"
-    volume_name    = docker_volume.docker_data.name
+    container_path = "/var/run/docker.sock"
+    host_path      = "/var/run/docker.sock"
     read_only      = false
   }
 
