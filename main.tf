@@ -439,15 +439,27 @@ removed {
   }
 }
 
-# docker_data volume is no longer managed — the workspace runs Docker-in-
-# Docker with /var/lib/docker on the container writable layer (wiped on
-# every workspace stop by Coder; docker-prune.service additionally prunes
-# on shutdown). Volume is retained to avoid data loss for any workspace
-# that still has images/cache in it from the sysbox era.
-removed {
-  from = docker_volume.docker_data
+# Per-workspace /var/lib/docker volume. Required for Docker-in-Docker:
+# nested overlay-on-overlay fails when /var/lib/docker is on the
+# container writable layer, so the inner dockerd needs a real filesystem
+# beneath it. docker-prune.service runs `docker system prune -af --volumes`
+# on shutdown to keep the volume from accumulating image cache over time.
+resource "docker_volume" "docker_data" {
+  name = "coder-${data.coder_workspace.me.id}-docker-data"
   lifecycle {
-    destroy = false
+    ignore_changes = all
+  }
+  labels {
+    label = "coder.owner"
+    value = data.coder_workspace_owner.me.name
+  }
+  labels {
+    label = "coder.owner_id"
+    value = data.coder_workspace_owner.me.id
+  }
+  labels {
+    label = "coder.workspace_id"
+    value = data.coder_workspace.me.id
   }
 }
 
@@ -546,6 +558,12 @@ resource "docker_container" "workspace" {
   volumes {
     container_path = "${local.workspace_home}/projects"
     volume_name    = docker_volume.projects_volume.name
+    read_only      = false
+  }
+
+  volumes {
+    container_path = "/var/lib/docker"
+    volume_name    = docker_volume.docker_data.name
     read_only      = false
   }
 
