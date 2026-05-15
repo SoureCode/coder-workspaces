@@ -56,7 +56,8 @@ ENV LANGUAGE=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
 
 # Workspace user: uid 1000, in docker group, passwordless sudo.
-RUN useradd "${USERNAME}" \
+RUN groupadd --system docker && \
+    useradd "${USERNAME}" \
         --create-home \
         --shell=/bin/bash \
         --groups=docker \
