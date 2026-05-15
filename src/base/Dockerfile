@@ -128,12 +128,12 @@ RUN printf '\nif [ -d /etc/profile.d ]; then\n  for i in /etc/profile.d/*.sh; do
 RUN mkdir -p /etc/coder
 COPY src/base/coder-agent.service /etc/systemd/system/coder-agent.service
 COPY src/base/web-shell.service /etc/systemd/system/web-shell.service
-COPY src/base/var-run-docker.sock.mount /etc/systemd/system/var-run-docker.sock.mount
+COPY src/base/run-docker.sock.mount /etc/systemd/system/run-docker.sock.mount
 COPY src/base/docker-sock.tmpfiles.conf /etc/tmpfiles.d/docker-sock.conf
 COPY --chmod=0755 src/base/web-shell-launch.sh /usr/local/bin/web-shell-launch
 RUN install -m 0644 /dev/null /var/log/web-shell.log && \
     chown coder:coder /var/log/web-shell.log && \
-    systemctl enable coder-agent.service web-shell.service var-run-docker.sock.mount
+    systemctl enable coder-agent.service web-shell.service run-docker.sock.mount
 
 # Entrypoint claims fresh-volume mountpoints for the workspace user before
 # systemd starts. See entrypoint.sh for rationale.

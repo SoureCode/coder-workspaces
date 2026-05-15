@@ -1,5 +1,5 @@
 [Unit]
-Description=Bind-mount host Docker socket into /var/run
+Description=Bind-mount host Docker socket into /run
 DefaultDependencies=no
 After=systemd-tmpfiles-setup.service
 Requires=systemd-tmpfiles-setup.service
@@ -9,7 +9,7 @@ Conflicts=shutdown.target
 
 [Mount]
 What=/host-docker.sock
-Where=/var/run/docker.sock
+Where=/run/docker.sock
 Type=none
 Options=bind
 

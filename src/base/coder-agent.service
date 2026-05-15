@@ -1,8 +1,8 @@
 [Unit]
 Description=Coder Agent
-After=network-online.target var-run-docker.sock.mount
+After=network-online.target run-docker.sock.mount
 Wants=network-online.target
-Requires=var-run-docker.sock.mount
+Requires=run-docker.sock.mount
 ConditionPathExists=/etc/coder/agent-init.sh
 
 [Service]

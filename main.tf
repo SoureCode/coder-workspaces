@@ -563,7 +563,8 @@ resource "docker_container" "workspace" {
   # Stash the host socket outside /run, which systemd remounts as a fresh
   # tmpfs at boot and would shadow a bind mount placed there. A systemd
   # .mount unit in the image re-binds /host-docker.sock onto
-  # /var/run/docker.sock after /run is set up.
+  # /run/docker.sock after /run is set up. (/var/run is a symlink to /run on
+  # Debian; systemd rejects non-canonical mount unit paths.)
   volumes {
     container_path = "/host-docker.sock"
     host_path      = "/var/run/docker.sock"
